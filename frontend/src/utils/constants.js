@@ -1,0 +1,22 @@
+// export const API_URL = 'http://10.0.2.2:5000/api'; // For Android Emulator
+export const API_URL = 'http://localhost:5000/api'; // For Web
+// export const API_URL = 'http://192.168.x.x:5000/api'; // For Physical Device (Replace with your IP)
+// export const API_URL = 'https://abc123.ngrok-free.app/api';
+
+export const TAGLINES = [
+    "Share what you have. Change someone’s world.",
+    "Your extra can be someone’s essential.",
+    "Connecting hearts through giving.",
+    "Donate nearby. Help instantly.",
+    "Because sharing is humanity."
+];
+
+export const COLORS = {
+    primary: '#4CAF50', // Green for giving/nature
+    secondary: '#2196F3', // Blue for trust
+    accent: '#FF9800', // Orange for warmth
+    background: '#F5F5F5',
+    text: '#333333',
+    white: '#FFFFFF',
+    error: '#F44336'
+};
