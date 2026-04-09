@@ -1,5 +1,5 @@
-// export const API_URL = 'http://10.0.2.2:5000/api'; // For Android Emulator
-export const API_URL = 'http://localhost:5000/api'; // For Web
+export const API_URL = 'http://10.0.2.2:5000/api'; // For Android Emulator
+// export const API_URL = 'http://localhost:5000/api'; // For Web
 // export const API_URL = 'http://192.168.x.x:5000/api'; // For Physical Device (Replace with your IP)
 // export const API_URL = 'https://abc123.ngrok-free.app/api';
 

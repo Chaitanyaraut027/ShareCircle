@@ -1,10 +1,35 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, SafeAreaView, StatusBar } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, StatusBar, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import styles from '../styles/Profile';
 import { COLORS } from '../utils/constants';
+import { getUserHistory } from '../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ProfileScreen = ({ navigation, route }) => {
-    const { user } = route.params || {};
+    const defaultUser = route.params?.user || null;
+    const [user, setUser] = useState(defaultUser);
+    const [history, setHistory] = useState({ donated: [], received: [] });
+
+    useEffect(() => {
+        const loadUserAndHistory = async () => {
+            let currentUser = defaultUser;
+            if (!currentUser) {
+                const storedUser = await AsyncStorage.getItem('user');
+                if (storedUser) {
+                    currentUser = JSON.parse(storedUser);
+                    setUser(currentUser);
+                }
+            }
+            if (currentUser && currentUser._id) {
+                const res = await getUserHistory(currentUser._id);
+                if (res && res.success) {
+                    setHistory(res.data);
+                }
+            }
+        };
+        loadUserAndHistory();
+    }, []);
 
     const handleLogout = () => {
         // Clear token logic here if needed
@@ -58,6 +83,35 @@ const ProfileScreen = ({ navigation, route }) => {
                 <View style={styles.detailItem}>
                     <Text style={styles.detailLabel}>User ID</Text>
                     <Text style={{ ...styles.detailValue, fontSize: 12, color: '#aaa' }}>{user._id}</Text>
+                </View>
+
+                {/* History Section */}
+                <View style={{ marginTop: 20 }}>
+                    <Text style={{ fontSize: 18, fontWeight: '700', marginBottom: 10 }}>History 🌿</Text>
+                    
+                    <Text style={{ fontSize: 16, fontWeight: '600', color: '#10B981', marginTop: 10 }}>Donated Items</Text>
+                    {history.donated.length === 0 ? (
+                        <Text style={{ color: '#aaa' }}>No items donated yet.</Text>
+                    ) : (
+                        history.donated.map((item, idx) => (
+                            <View key={idx} style={{ backgroundColor: '#F0FDF4', padding: 10, borderRadius: 8, marginVertical: 5 }}>
+                                <Text style={{ fontWeight: '600' }}>{item.title}</Text>
+                                <Text style={{ fontSize: 12, color: '#64748B' }}>{new Date(item.createdAt).toLocaleDateString()}</Text>
+                            </View>
+                        ))
+                    )}
+
+                    <Text style={{ fontSize: 16, fontWeight: '600', color: '#F39C12', marginTop: 15 }}>Received Items</Text>
+                    {history.received.length === 0 ? (
+                        <Text style={{ color: '#aaa' }}>No items received yet.</Text>
+                    ) : (
+                        history.received.map((item, idx) => (
+                            <View key={idx} style={{ backgroundColor: '#FFFBEB', padding: 10, borderRadius: 8, marginVertical: 5 }}>
+                                <Text style={{ fontWeight: '600' }}>{item.title}</Text>
+                                <Text style={{ fontSize: 12, color: '#64748B' }}>{new Date(item.createdAt).toLocaleDateString()}</Text>
+                            </View>
+                        ))
+                    )}
                 </View>
             </ScrollView>
 

@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, SafeAreaView, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import styles from '../styles/Auth';
 import { loginUser } from '../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LoginScreen = ({ navigation }) => {
     const [email, setEmail] = useState('');
@@ -19,9 +21,12 @@ const LoginScreen = ({ navigation }) => {
             const response = await loginUser(email, password);
 
             if (response && response.token) {
-                // Navigate to UserWelcome and pass user data
+                // Save user to AsyncStorage
+                await AsyncStorage.setItem('user', JSON.stringify(response.data));
+                
+                // Navigate directly to MainTabs (Unified Dashboard)
                 // Using replace to prevent going back to login
-                navigation.replace('UserWelcome', { user: response.data });
+                navigation.replace('MainTabs', { user: response.data });
             } else {
                 Alert.alert('Error', 'Login failed. Please try again.');
             }
