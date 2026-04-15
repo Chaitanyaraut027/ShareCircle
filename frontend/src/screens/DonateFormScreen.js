@@ -25,6 +25,7 @@ const DonateFormScreen = ({ navigation }) => {
     const [coords, setCoords] = useState(null);
 
     const [loading, setLoading] = useState(false);
+    const [aiLoading, setAiLoading] = useState(false);
     const [imageUri, setImageUri] = useState(null);
 
     const pickImage = async () => {
@@ -136,23 +137,34 @@ const DonateFormScreen = ({ navigation }) => {
             return;
         }
         
-        setLoading(true);
+        setAiLoading(true);
+        // Create a timeout that alerts after 1 minute if the request is still pending
+        const timeoutId = setTimeout(() => {
+            if (aiLoading) {
+                Alert.alert('AI gen facing error', 'AI is taking too long to respond. Please type manually or try again in a moment.');
+                setAiLoading(false);
+            }
+        }, 60000); // 1 minute
+
         try {
             const response = await axios.post(`${API_URL}/donations/generate-description`, { 
                 title, 
                 category 
-            });
+            }, { timeout: 55000 }); // Slightly less than 60s
+            
+            clearTimeout(timeoutId);
             
             if (response.data.success) {
                 setDescription(response.data.description);
             } else {
-                Alert.alert('Error', response.data.message || 'AI generate failed');
+                Alert.alert('AI gen facing error', response.data.message || 'Please type manually.');
             }
         } catch (error) {
+            clearTimeout(timeoutId);
             console.error('AI Gen Error:', error);
-            Alert.alert('Error', 'Could not reach server. Please wait for the Render backend to wake up and try again.');
+            Alert.alert('AI gen facing error', 'Could not reach AI service. Please type manually or try again later.');
         } finally {
-            setLoading(false);
+            setAiLoading(false);
         }
     };
 
@@ -290,9 +302,13 @@ const DonateFormScreen = ({ navigation }) => {
                 <View style={styles.inputGroup}>
                     <View style={styles.labelRow}>
                         <Text style={styles.label}>Description</Text>
-                        <TouchableOpacity style={styles.aiButton} onPress={generateAIDescription}>
-                            <Ionicons name="sparkles" size={16} color="#8B5CF6" />
-                            <Text style={styles.aiButtonText}>AI Gen</Text>
+                        <TouchableOpacity style={styles.aiButton} onPress={generateAIDescription} disabled={aiLoading}>
+                            {aiLoading ? (
+                                <ActivityIndicator size="small" color="#8B5CF6" style={{ marginRight: 6 }} />
+                            ) : (
+                                <Ionicons name="sparkles" size={16} color="#8B5CF6" />
+                            )}
+                            <Text style={styles.aiButtonText}>{aiLoading ? 'generating...' : 'AI Gen'}</Text>
                         </TouchableOpacity>
                     </View>
                     <TextInput 
