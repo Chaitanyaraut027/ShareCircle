@@ -11,17 +11,31 @@ const __dirname = dirname(__filename);
 
 const serviceAccountPath = join(__dirname, 'serviceAccountKey.json');
 
+let serviceAccount;
+
 try {
-    const serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
-    
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
-    
-    console.log('✅ Firebase Admin initialized successfully');
+    // 1. Check if the environment variable exists (Best for Render/Heroku)
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    } 
+    // 2. Fallback to local file (For local development)
+    else if (readFileSync(serviceAccountPath, 'utf8')) {
+        serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
+    }
+
+    if (serviceAccount) {
+        admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount)
+        });
+        console.log('✅ Firebase Admin initialized successfully');
+    } else {
+        throw new Error('No service account credentials found');
+    }
 } catch (error) {
-    console.warn('⚠️ Firebase service account key not found. Push notifications via Firebase will be disabled.');
-    console.warn('Please place your downloaded JSON key at: backend/src/config/serviceAccountKey.json');
+    console.warn('⚠️ Firebase initialization failed:', error.message);
+    console.warn('Push notifications will be disabled. To fix this:');
+    console.warn('Local: Place src/config/serviceAccountKey.json');
+    console.warn('Render: Add FIREBASE_SERVICE_ACCOUNT environment variable with the JSON content');
 }
 
 export default admin;
