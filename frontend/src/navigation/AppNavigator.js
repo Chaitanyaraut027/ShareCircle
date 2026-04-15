@@ -9,7 +9,11 @@ import SplashScreen from '../screens/SplashScreen';
 import OnboardingScreen from '../screens/OnboardingScreen';
 import MainTabNavigator from './MainTabNavigator';
 import DonateFormScreen from '../screens/DonateFormScreen';
-import RequestFormScreen from '../screens/RequestFormScreen';
+import DonationDetailScreen from '../screens/DonationDetailScreen';
+import LeaderboardScreen from '../screens/LeaderboardScreen';
+import RequestsScreen from '../screens/RequestsScreen';
+import FindNearbyDonationsScreen from '../screens/FindNearbyDonationsScreen';
+import AdminDashboardScreen from '../screens/AdminDashboardScreen';
 
 const Stack = createStackNavigator();
 
@@ -24,8 +28,12 @@ const AppNavigator = () => {
             <Stack.Screen name="Splash" component={SplashScreen} />
             <Stack.Screen name="Onboarding" component={OnboardingScreen} />
             <Stack.Screen name="MainTabs" component={MainTabNavigator} />
+            <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
             <Stack.Screen name="DonateForm" component={DonateFormScreen} />
-            <Stack.Screen name="RequestForm" component={RequestFormScreen} />
+            <Stack.Screen name="DonationDetail" component={DonationDetailScreen} />
+            <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
+            <Stack.Screen name="Requests" component={RequestsScreen} />
+            <Stack.Screen name="NearMe" component={FindNearbyDonationsScreen} />
             <Stack.Screen name="Welcome" component={WelcomeScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
             <Stack.Screen name="Login" component={LoginScreen} />

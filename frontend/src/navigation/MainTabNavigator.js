@@ -4,6 +4,9 @@ import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
 import { MaterialCommunityIcons, Feather, Ionicons } from '@expo/vector-icons';
 import DashboardScreen from '../screens/DashboardScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import LeaderboardScreen from '../screens/LeaderboardScreen';
+import DonateFormScreen from '../screens/DonateFormScreen';
+import RequestsScreen from '../screens/RequestsScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -15,17 +18,7 @@ const PlaceholderScreen = ({ name }) => (
   </View>
 );
 
-const CustomTabBarButton = ({ children, onPress }) => (
-  <TouchableOpacity
-    style={styles.customButtonContainer}
-    onPress={onPress}
-    activeOpacity={0.8}
-  >
-    <View style={styles.customButton}>
-      {children}
-    </View>
-  </TouchableOpacity>
-);
+
 
 const MainTabNavigator = () => {
   return (
@@ -47,28 +40,36 @@ const MainTabNavigator = () => {
         }}
       />
       <Tab.Screen 
-        name="Requests" 
-        component={() => <PlaceholderScreen name="Requests" />} 
+        name="Leaderboard" 
+        component={LeaderboardScreen} 
         options={{
-          tabBarIcon: ({ color, size }) => <MaterialCommunityIcons name="clipboard-list-outline" color={color} size={size} />,
+          tabBarLabel: 'Rankings',
+          tabBarIcon: ({ color, size }) => <MaterialCommunityIcons name="trophy-outline" color={color} size={size} />,
         }}
       />
       <Tab.Screen 
-        name="Donate" 
-        component={() => <PlaceholderScreen name="Donate" />} 
+        name="DonateTab" 
+        component={DonateFormScreen} 
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            e.preventDefault();
+            navigation.navigate('DonateForm');
+          },
+        })}
         options={{
-          tabBarIcon: ({ color, size }) => <Feather name="plus" color="#FFF" size={30} />,
-          tabBarButton: (props) => <CustomTabBarButton {...props} />,
-          tabBarLabel: ({ focused, color }) => (
-            <Text style={[styles.tabBarLabel, { color: focused ? '#10B981' : '#94A3B8', marginTop: 22 }]}>Donate</Text>
+          tabBarLabel: () => null,
+          tabBarIcon: ({ color, size }) => (
+            <View style={styles.customButton}>
+               <Feather name="plus" color="#FFF" size={26} />
+            </View>
           ),
         }}
       />
       <Tab.Screen 
-        name="Messages" 
-        component={() => <PlaceholderScreen name="Messages" />} 
+        name="Requests" 
+        component={RequestsScreen} 
         options={{
-          tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="clipboard-outline" color={color} size={size} />,
         }}
       />
       <Tab.Screen 
@@ -103,25 +104,20 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
-  customButtonContainer: {
-    top: -20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+
   customButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#F39C12', // Match the "Donate Now" button color
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#F39C12',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#F39C12',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-    borderWidth: 4,
-    borderColor: '#F8FAFC',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 5,
+    marginTop: -5,
   }
 });
 

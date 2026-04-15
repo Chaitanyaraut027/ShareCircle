@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import MapView, { Marker } from 'react-native-maps';
-import { getNearbyItems } from '../services/api';
+import MapView, { Marker, Callout, Circle, Polyline } from 'react-native-maps';
+import Slider from '@react-native-community/slider';
+import { getNearbyItems, getUserHistory, getNotificationCount } from '../services/api';
+import { COLORS, API_URL } from '../utils/constants';
+import { registerForPushNotificationsAsync, savePushToken, initNotifications } from '../services/notificationService';
 import {
   View,
   Text,
@@ -10,9 +14,11 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  SafeAreaView,
   Dimensions,
   Platform,
+  Linking,
+  TextInput,
+  Alert
 } from 'react-native';
 import { 
   MaterialCommunityIcons, 
@@ -22,233 +28,631 @@ import {
 
 const { width } = Dimensions.get('window');
 
+const getMidPoint = (loc1, loc2) => {
+    return {
+        latitude: (loc1.latitude + loc2.latitude) / 2,
+        longitude: (loc1.longitude + loc2.longitude) / 2
+    };
+};
+
+const calculateDistance = (loc1, targetLoc) => {
+    if (!loc1 || !targetLoc || !targetLoc.coordinates) return 'N/A';
+    const [tLon, tLat] = targetLoc.coordinates;
+    const { latitude: lat1, longitude: lon1 } = loc1;
+    const R = 6371; // km
+    const dLat = (tLat - lat1) * Math.PI / 180;
+    const dLon = (tLon - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(tLat * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return (R * c).toFixed(1) + ' KM';
+};
+
+const formatPhoneNumber = (phone, isWhatsApp = false) => {
+    if (!phone) return '';
+    let digits = phone.replace(/[^0-9]/g, '');
+    if (digits.length === 10) {
+        if (isWhatsApp) return `91${digits}`;
+        return `+91${digits}`;
+    }
+    if (isWhatsApp) return digits;
+    return phone.startsWith('+') ? phone.replace(/[^0-9+]/g, '') : `+${digits}`;
+};
+
 const DashboardScreen = ({ navigation }) => {
-  const [role, setRole] = useState('Donor'); // 'Donor' or 'Receiver'
   const [user, setUser] = useState(null);
   const [location, setLocation] = useState(null);
-  const [errorMsg, setErrorMsg] = useState(null);
   const [nearbyItems, setNearbyItems] = useState([]);
+  const [radiusInput, setRadiusInput] = useState('50');
+  const [activeRadius, setActiveRadius] = useState(50);
+  const [selectedMarker, setSelectedMarker] = useState(null);
+  const [routeCoords, setRouteCoords] = useState([]);
+  const [routeDistance, setRouteDistance] = useState(null);
+  const [historyStats, setHistoryStats] = useState({ donations: 0, points: 0 });
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setErrorMsg('Permission to access location was denied');
-        return;
-      }
+    if (selectedMarker && location && selectedMarker.location?.coordinates) {
+      const getRoute = async () => {
+         const start = location;
+         const end = { latitude: selectedMarker.location.coordinates[1], longitude: selectedMarker.location.coordinates[0] };
+         try {
+             const response = await fetch(`http://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson`);
+             const data = await response.json();
+             
+             if (data.routes && data.routes.length > 0) {
+                 const coords = data.routes[0].geometry.coordinates.map(c => ({
+                     latitude: c[1],
+                     longitude: c[0]
+                 }));
+                 setRouteCoords(coords);
+                 setRouteDistance((data.routes[0].distance / 1000).toFixed(1) + ' KM');
+             } else {
+                 setRouteCoords([start, end]);
+                 setRouteDistance(calculateDistance(start, selectedMarker.location));
+             }
+         } catch(e) {
+             console.error("Routing error:", e);
+             setRouteCoords([start, end]);
+             setRouteDistance(calculateDistance(start, selectedMarker.location));
+         }
+      };
+      getRoute();
+    } else {
+      setRouteCoords([]);
+      setRouteDistance(null);
+    }
+  }, [selectedMarker, location]);
 
-      let loc = await Location.getCurrentPositionAsync({});
-      setLocation({
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-        latitudeDelta: 0.0922,
-        longitudeDelta: 0.0421,
-      });
-    })();
+  useEffect(() => {
+     let r = parseInt(radiusInput);
+     if (isNaN(r) || r < 1) r = 1;
+     const timeout = setTimeout(() => {
+        setActiveRadius(r);
+     }, 800);
+     return () => clearTimeout(timeout);
+  }, [radiusInput]);
 
-    const fetchUser = async () => {
-      try {
-        const userData = await AsyncStorage.getItem('user');
-        if (userData) {
-          setUser(JSON.parse(userData));
+  useFocusEffect(
+    useCallback(() => {
+      const fetchData = async () => {
+        try {
+          const userData = await AsyncStorage.getItem('user');
+          let currentUser = null;
+          
+          if (userData) {
+            currentUser = JSON.parse(userData);
+            setUser(currentUser);
+            try {
+               const hRes = await getUserHistory(currentUser._id);
+               if (hRes && hRes.success && hRes.data?.donated) {
+                   const count = hRes.data.donated.length;
+                   setHistoryStats({ donations: count, points: count * 25 });
+               } else {
+                   setHistoryStats({ donations: currentUser.donationCount || 0, points: (currentUser.donationCount || 0) * 25 });
+               }
+            } catch(e) {
+               setHistoryStats({ donations: currentUser.donationCount || 0, points: (currentUser.donationCount || 0) * 25 });
+            }
+          }
+
+          let activeLocation = location;
+
+          if (currentUser?.location?.coordinates && currentUser.location.coordinates.length === 2) {
+            activeLocation = {
+              latitude: currentUser.location.coordinates[1],
+              longitude: currentUser.location.coordinates[0],
+              latitudeDelta: 0.0922,
+              longitudeDelta: 0.0421,
+            };
+            setLocation(activeLocation);
+          } else if (!activeLocation) {
+            // Fallback to GPS
+            let { status } = await Location.requestForegroundPermissionsAsync();
+            if (status === 'granted') {
+              let loc = await Location.getCurrentPositionAsync({});
+              activeLocation = {
+                latitude: loc.coords.latitude,
+                longitude: loc.coords.longitude,
+                latitudeDelta: 0.0922,
+                longitudeDelta: 0.0421,
+              };
+              setLocation(activeLocation);
+            }
+          }
+
+          // Fetch Nearby
+          if (activeLocation) {
+              const res = await getNearbyItems(activeLocation.longitude, activeLocation.latitude, 'donations', activeRadius, currentUser?._id);
+              if (res && res.success) {
+                  setNearbyItems(res.data);
+              }
+          }
+
+          // Fetch Notification Count
+          if (currentUser?._id) {
+              const nData = await getNotificationCount(currentUser._id);
+              if (nData && nData.success) {
+                  setUnreadCount(nData.count);
+              }
+          }
+        } catch (error) {
+          console.error('Error fetching data:', error);
         }
-      } catch (error) {
-        console.error('Error fetching user from AsyncStorage:', error);
+      };
+
+      fetchData();
+    }, [activeRadius]) // removed location dependency so it evaluates freshly every focus
+  );
+
+  useEffect(() => {
+    const setupNotifications = async () => {
+      const userStr = await AsyncStorage.getItem('user');
+      if (!userStr) return;
+      const currentUser = JSON.parse(userStr);
+      
+      const token = await registerForPushNotificationsAsync();
+      if (token && currentUser?._id) {
+        await savePushToken(currentUser._id, token);
       }
     };
-    fetchUser();
+
+    setupNotifications();
+    const cleanup = initNotifications(navigation);
+    return cleanup;
   }, []);
 
-  useEffect(() => {
-    const fetchNearby = async () => {
-        if (location) {
-            const type = role === 'Donor' ? 'requests' : 'donations';
-            const res = await getNearbyItems(location.longitude, location.latitude, type);
-            if (res && res.success) {
-                setNearbyItems(res.data);
-            }
-        }
-    };
-    fetchNearby();
-  }, [location, role]);
+  const getTimeGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good Morning";
+    if (hour < 17) return "Good Afternoon";
+    return "Good Evening";
+  };
+
+  const getSubGreeting = () => {
+    if (!user) return "Change lives by donating 🌿";
+    const donations = historyStats.donations || 0;
+    if (donations > 0) return `You have changed ${donations * 5} lives this month 🌿`;
+    return "Change lives by donating 🌿";
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
+      <View style={{height: Platform.OS === 'ios' ? 50 : 30}} />
+      
+      {/* Sidebar Overlay */}
+      {isSidebarOpen && (
+        <View style={styles.sidebarOverlay}>
+          <TouchableOpacity 
+            style={styles.sidebarBackdrop} 
+            activeOpacity={1} 
+            onPress={() => setIsSidebarOpen(false)} 
+          />
+          <View style={styles.sidebarContent}>
+            <View style={styles.sidebarHeader}>
+              <View style={styles.logoContainer}>
+                <View style={styles.logoRing} />
+                <Text style={styles.logoText}>Menu</Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsSidebarOpen(false)} style={styles.closeBtn}>
+                <Ionicons name="close" size={28} color="#1E293B" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.sidebarItems}>
+              <TouchableOpacity style={styles.sidebarItem} onPress={() => { setIsSidebarOpen(false); navigation.navigate('DonateForm'); }}>
+                <View style={[styles.sidebarIconBox, {backgroundColor: '#FEF3F2'}]}>
+                  <MaterialCommunityIcons name="heart-plus" color="#E74C3C" size={22} />
+                </View>
+                <Text style={styles.sidebarLabel}>Donate</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.sidebarItem} onPress={() => { setIsSidebarOpen(false); navigation.navigate('NearMe', { type: 'donations' }); }}>
+                <View style={[styles.sidebarIconBox, {backgroundColor: '#F0F9F4'}]}>
+                  <Feather name="search" color="#2F7B5E" size={22} />
+                </View>
+                <Text style={styles.sidebarLabel}>Find Donations</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.sidebarItem} onPress={() => { setIsSidebarOpen(false); navigation.navigate('Requests'); }}>
+                <View style={[styles.sidebarIconBox, {backgroundColor: '#EEF2FF'}]}>
+                  <Ionicons name="clipboard" color="#4F46E5" size={22} />
+                </View>
+                <Text style={styles.sidebarLabel}>Requests</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.sidebarItem} onPress={() => { setIsSidebarOpen(false); navigation.navigate('Requests'); }}>
+                <View style={[styles.sidebarIconBox, {backgroundColor: '#FFF7ED'}]}>
+                  <Ionicons name="notifications" color="#F39C12" size={22} />
+                </View>
+                <Text style={styles.sidebarLabel}>Notifications</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.sidebarItem} onPress={() => { setIsSidebarOpen(false); navigation.navigate('Leaderboard'); }}>
+                <View style={[styles.sidebarIconBox, {backgroundColor: '#FFFBEB'}]}>
+                  <MaterialCommunityIcons name="trophy" color="#F59E0B" size={22} />
+                </View>
+                <Text style={styles.sidebarLabel}>Rankings</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.sidebarItem} onPress={() => { setIsSidebarOpen(false); navigation.navigate('Profile'); }}>
+                <View style={[styles.sidebarIconBox, {backgroundColor: '#F8FAFC'}]}>
+                  <Feather name="user" color="#64748B" size={22} />
+                </View>
+                <Text style={styles.sidebarLabel}>Profile</Text>
+              </TouchableOpacity>
+
+              {user?.role === 'admin' && (
+                <TouchableOpacity style={styles.sidebarItem} onPress={() => { setIsSidebarOpen(false); navigation.navigate('AdminDashboard'); }}>
+                  <View style={[styles.sidebarIconBox, {backgroundColor: '#F0FDFA'}]}>
+                    <MaterialCommunityIcons name="shield-crown" color="#0D9488" size={22} />
+                  </View>
+                  <Text style={styles.sidebarLabel}>Admin Panel</Text>
+                </TouchableOpacity>
+              )}
+
+              <View style={styles.sidebarDivider} />
+              
+              <TouchableOpacity style={styles.sidebarItem} onPress={() => setIsSidebarOpen(false)}>
+                <View style={[styles.sidebarIconBox, {backgroundColor: '#F1F5F9'}]}>
+                  <Feather name="settings" color="#1E293B" size={22} />
+                </View>
+                <Text style={styles.sidebarLabel}>Services</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.sidebarFooter}>
+              <Text style={styles.versionText}>ShareCircle v1.0.4</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
         {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Image 
-              source={{ uri: 'https://placeholder.com/logo' }} // Use actual logo if available
-              style={styles.logo}
-              resizeMode="contain"
-            />
+          <TouchableOpacity style={styles.menuIconBtn} onPress={() => setIsSidebarOpen(true)}>
+            <Feather name="menu" color="#1E293B" size={26} />
+          </TouchableOpacity>
+
+          <View style={styles.logoContainerCenter}>
+            <View style={styles.logoRing} />
+            <Text style={styles.logoText}>ShareCircle</Text>
           </View>
+
           <View style={styles.headerRight}>
-            <View style={styles.roleToggle}>
-              <TouchableOpacity 
-                style={[styles.roleButton, role === 'Donor' && styles.roleButtonActive]}
-                onPress={() => setRole('Donor')}
-              >
-                <Text style={[styles.roleText, role === 'Donor' && styles.roleTextActive]}>Donor</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.roleButton, role === 'Receiver' && styles.roleButtonActive]}
-                onPress={() => setRole('Receiver')}
-              >
-                <Text style={[styles.roleText, role === 'Receiver' && styles.roleTextActive]}>Receiver</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.avatarContainer}>
-              <View style={[styles.avatar, { backgroundColor: '#10B981', justifyContent: 'center', alignItems: 'center' }]}>
-                <Text style={{ color: '#FFF', fontSize: 18, fontWeight: 'bold' }}>
-                  {user?.fullName ? user.fullName.charAt(0).toUpperCase() : 'U'}
-                </Text>
-              </View>
-              <View style={styles.notificationBadge}><Text style={styles.badgeText}>1</Text></View>
-            </View>
+            <TouchableOpacity style={styles.notificationBtn} onPress={() => navigation.navigate('Requests')}>
+              <Ionicons name="notifications-outline" color="#1E293B" size={26} />
+              {unreadCount > 0 && (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
 
         {/* Welcome Section */}
         <View style={styles.welcomeSection}>
-          <Text style={styles.greetingText}>Good Evening, <Text style={styles.userName}>{user?.fullName ? user.fullName.split(' ')[0] : 'User'}</Text></Text>
+          <Text style={styles.greetingText}>{getTimeGreeting()}, <Text style={styles.userName}>{user?.fullName ? user.fullName.split(' ')[0] : 'User'}</Text></Text>
+          <Text style={styles.subGreetingText}>{getSubGreeting()}</Text>
         </View>
 
         {/* Primary Action Card */}
-        {role === 'Donor' ? (
-          <TouchableOpacity style={styles.primaryActionCard} onPress={() => navigation.navigate('DonateForm')}>
-            <View style={styles.cardInfo}>
-              <View style={styles.iconTitleRow}>
-                <MaterialCommunityIcons name="heart" color="#E74C3C" size={20} />
-                <Text style={styles.cardTitle}>Donate Items</Text>
+        <TouchableOpacity style={styles.primaryActionCard} onPress={() => navigation.navigate('DonateForm')}>
+          <View style={styles.cardInfo}>
+            <View style={styles.iconTitleRow}>
+              <View style={styles.heartIconCircle}>
+                <MaterialCommunityIcons name="heart" color="#FFF" size={16} />
               </View>
-              <Text style={styles.cardSubtitle}>Help someone nearby{'\n'}in minutes</Text>
-              <View style={styles.donateButton}>
-                <Text style={styles.donateButtonText}>Donate Now</Text>
-              </View>
+              <Text style={styles.cardTitle}>Donate Items</Text>
             </View>
-            <Image 
-              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/10052/10052912.png' }} // Generic donation box illustration
-              style={styles.cardIllustration}
-            />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={styles.primaryActionCard} onPress={() => navigation.navigate('RequestForm')}>
-            <View style={styles.cardInfo}>
-              <View style={styles.iconTitleRow}>
-                <MaterialCommunityIcons name="hand-heart" color="#10B981" size={20} />
-                <Text style={styles.cardTitle}>Request Help</Text>
-              </View>
-              <Text style={styles.cardSubtitle}>Ask your community{'\n'}for support</Text>
-              <View style={[styles.donateButton, { backgroundColor: '#10B981' }]}>
-                <Text style={styles.donateButtonText}>Request Now</Text>
-              </View>
-            </View>
-            <Image 
-              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/610/610313.png' }} // Generic help illustration
-              style={styles.cardIllustration}
-            />
-          </TouchableOpacity>
-        )}
-
-        {/* Search Bar / Nearby Requests Entry */}
-        <TouchableOpacity style={styles.searchBar} onPress={() => navigation.navigate('RequestForm')}>
-          <View style={styles.searchIconContainer}>
-            <Feather name="search" color="#10B981" size={24} />
+            <Text style={styles.cardSubtitle}>Help someone nearby{'\n'}in minutes</Text>
+            <TouchableOpacity style={styles.donateButton} onPress={() => navigation.navigate('DonateForm')}>
+              <Text style={styles.donateButtonText}>Donate Now</Text>
+              <Feather name="arrow-right" color="#FFF" size={16} style={{marginLeft: 8}} />
+            </TouchableOpacity>
           </View>
-          <View style={styles.searchTextContainer}>
-            <Text style={styles.searchTextTitle}>Looking for help?</Text>
-            <Text style={styles.searchTextSubtitle}>Find Nearby Donations</Text>
+          <View style={styles.cardImageContainer}>
+             <View style={styles.cardDecorativeCircle} />
+             <Image 
+               source={require('../../assets/donation_hero_v2.png')} 
+               style={styles.cardIllustrationLarge}
+             />
           </View>
-          <Feather name="chevron-right" color="#CBD5E1" size={20} />
         </TouchableOpacity>
 
-        {/* Nearby Urgent Requests or Available Donations */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{role === 'Donor' ? 'Nearby Urgent Requests' : 'Available Donations Nearby'}</Text>
-          <TouchableOpacity>
-            <Text style={styles.viewAllText}>View All</Text>
-          </TouchableOpacity>
+        {/* Search Bar */}
+        <TouchableOpacity style={styles.searchBar} onPress={() => navigation.navigate('NearMe', { type: 'donations' })}>
+          <View style={styles.searchIconContainer}>
+            <Feather name="search" color="#2F7B5E" size={24} />
+          </View>
+          <View style={styles.searchTextContainer}>
+            <Text style={styles.searchTextTitle}>Looking for items?</Text>
+            <Text style={styles.searchTextSubtitle}>Find Nearby Donations</Text>
+          </View>
+          <View style={styles.arrowIconContainer}>
+            <Feather name="chevron-right" color="#2F7B5E" size={16} />
+          </View>
+        </TouchableOpacity>
+
+        {/* Adjusting Slider */}
+        <View style={{flexDirection: 'row', alignItems:'center', marginBottom: 20}}>
+           <Text style={{fontSize: 12, color: '#94A3B8', marginRight: 5}}>0km</Text>
+           <Slider
+             style={{flex: 1, height: 35}}
+             minimumValue={0}
+             maximumValue={100}
+             step={1}
+             value={parseInt(radiusInput) || 50}
+             onValueChange={(val) => setRadiusInput(val.toString())}
+             minimumTrackTintColor="#2F7B5E"
+             maximumTrackTintColor="#D1EAE0"
+             thumbTintColor="#F39C12"
+           />
+           <Text style={{fontSize: 12, color: '#94A3B8', marginLeft: 5}}>100km</Text>
         </View>
 
-        {/* Map Placeholder with Request Card */}
-        <View style={styles.requestCardContainer}>
-          {/* Render markers for each dynamic item */}
-          <View style={styles.mapPlaceholder}>
+        {/* Map Section */}
+        <View style={{ height: 320, borderRadius: 24, overflow: 'hidden', marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 }}>
               {location ? (
                 <MapView
                   style={{ width: '100%', height: '100%' }}
                   initialRegion={location}
+                  onPress={() => setSelectedMarker(null)}
                 >
-                  <Marker coordinate={{ latitude: location.latitude, longitude: location.longitude }} pinColor="blue" title="You" />
-                  {nearbyItems.map(item => (
-                      item.location && item.location.coordinates && (
+                  <Marker coordinate={{ latitude: location.latitude, longitude: location.longitude }}>
+                      <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(52, 152, 219, 0.4)', justifyContent: 'center', alignItems: 'center' }}>
+                         <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#3498DB', borderWidth: 2, borderColor: '#FFF' }} />
+                      </View>
+                  </Marker>
+                  <Circle
+                      center={{ latitude: location.latitude, longitude: location.longitude }}
+                      radius={activeRadius * 1000}
+                      fillColor="rgba(47, 123, 94, 0.15)"
+                      strokeColor="rgba(47, 123, 94, 0.5)"
+                      strokeWidth={2}
+                  />
+                  {nearbyItems.map(item => {
+                      if (!item.location || !item.location.coordinates) return null;
+                      const creator = item.donor;
+                      const distStr = calculateDistance(location, item.location);
+                      const minutesAgo = Math.max(0, Math.floor((new Date() - new Date(item.createdAt)) / 60000));
+                      let timeStr = `${minutesAgo} mins ago`;
+                      if (minutesAgo > 60) timeStr = `${Math.floor(minutesAgo/60)} hrs ago`;
+                      if (minutesAgo > 1440) timeStr = `${Math.floor(minutesAgo/1440)} days ago`;
+
+                      const phone = creator?.mobileNumber || '';
+
+                      return (
                           <Marker 
                              key={item._id} 
                              coordinate={{ latitude: item.location.coordinates[1], longitude: item.location.coordinates[0] }} 
-                             title={item.title} 
-                             pinColor={role === 'Donor' ? 'red' : 'green'} 
+                             onPress={(e) => { e.stopPropagation(); setSelectedMarker(item); }}
+                          >
+                             <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.3, shadowRadius: 3, elevation: 4 }}>
+                                <Ionicons name="gift" size={16} color="#F39C12" />
+                             </View>
+                          </Marker>
+                      );
+                  })}
+                  {routeCoords.length > 1 && (
+                      <>
+                          <Polyline 
+                              coordinates={routeCoords}
+                              strokeColor="#3498DB"
+                              strokeWidth={4}
                           />
-                      )
-                  ))}
+                          <Marker coordinate={routeCoords[Math.floor(routeCoords.length / 2)]}>
+                              <View style={{ backgroundColor: '#1E293B', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, shadowColor: '#000', shadowOffset: {width:0, height:2}, shadowOpacity: 0.3, shadowRadius: 4, elevation: 4}}>
+                                   <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>{routeDistance || calculateDistance(location, selectedMarker.location)}</Text>
+                              </View>
+                          </Marker>
+                      </>
+                  )}
                 </MapView>
               ) : (
-                <View style={styles.mapMarker}>
-                  <Ionicons name="location" color="#FFF" size={20} />
-                </View>
+                 <View style={{flex:1, width: '100%', backgroundColor: '#E2F0E8', justifyContent:'center', alignItems:'center'}}>
+                   <Ionicons name="location" color="#2F7B5E" size={32} />
+                 </View>
               )}
-          </View>
-          
-          {/* Dynamic Item List */}
-          {nearbyItems.length === 0 ? (
-            <View style={{ padding: 20, alignItems: 'center' }}>
-                <Text style={{ color: '#64748B' }}>No nearby {role === 'Donor' ? 'requests' : 'donations'} found.</Text>
-            </View>
-          ) : (
-            nearbyItems.map(item => {
-              // Extract the user that posted it
-              const creator = role === 'Donor' ? item.requester : item.donor;
-              return (
-              <View key={item._id} style={styles.requestDetails}>
-                <View style={styles.requestUserRow}>
-                  <Image source={{ uri: creator?.profilePic || 'https://i.pravatar.cc/150?u=fallback' }} style={styles.requestAvatar} />
-                  <View style={styles.requestUserInfo}>
-                    <Text style={styles.requestUserName}>{creator?.fullName || 'Anonymous'}</Text>
-                    <Text style={styles.requestTimeText}>
-                        {new Date(item.createdAt).toLocaleDateString()}
-                    </Text>
-                  </View>
-                  <View style={styles.distanceBadge}>
-                    <Text style={styles.distanceText}>Near you</Text>
-                  </View>
-                </View>
 
-                <Text style={styles.requestTitle}>{item.title}</Text>
-                <Text style={styles.requestCategory}>{item.category}</Text>
-
-                <View style={styles.actionRow}>
-                   <View style={[styles.urgentBadge, role === 'Receiver' && { backgroundColor: '#10B981' }]}>
-                     <Text style={styles.urgentText}>{role === 'Donor' ? 'URGENT' : 'AVAILABLE'}</Text>
-                   </View>
-                   {/* In a complete app, these would open WhatsApp or dialer */}
-                   <TouchableOpacity style={styles.circularActionBtn}>
-                     <Feather name="phone" color="#10B981" size={18} />
-                   </TouchableOpacity>
-                   <TouchableOpacity style={styles.circularActionBtn} onPress={() => alert('WhatsApp Mock: Notifying user...')}>
-                     <MaterialCommunityIcons name="whatsapp" color="#10B981" size={18} />
-                   </TouchableOpacity>
-                </View>
-              </View>
-            )})
-          )}
+              {/* Selected Marker Overlay details mimicking the list view */}
+              {selectedMarker && (
+                  <View style={{ position: 'absolute', bottom: 10, left: 10, right: 10, backgroundColor: '#FFF', borderRadius: 20, padding: 14, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 6, flexDirection: 'row' }}>
+                      <TouchableOpacity style={{position:'absolute', top: -8, right: -8, zIndex: 20, backgroundColor: '#FFF', borderRadius: 14}} onPress={() => setSelectedMarker(null)}>
+                          <Ionicons name="close-circle" size={28} color="#E74C3C" />
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                          style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                          onPress={() => navigation.navigate('DonationDetail', { item: selectedMarker, userLocation: location })}
+                      >
+                          <Image source={{ uri: selectedMarker.image || selectedMarker.imageUrl || 'https://via.placeholder.com/150' }} style={{ width: 85, height: 85, borderRadius: 14, marginRight: 14, backgroundColor: '#E2E8F0' }} />
+                          
+                          <View style={{ flex: 1, justifyContent: 'center' }}>
+                              <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#1E293B', marginBottom: 4 }} numberOfLines={1}>
+                                  {selectedMarker.donor?.fullName || 'Anonymous'}
+                              </Text>
+                              <Text style={{ fontSize: 14, color: '#334155', fontWeight: '600', marginBottom: 4 }}>{selectedMarker.title}</Text>
+                              <Text style={{ fontSize: 12, color: '#64748B' }}>
+                                  Dist: {routeDistance || calculateDistance(location, selectedMarker.location)}
+                              </Text>
+                          </View>
+                      </TouchableOpacity>
+                      
+                      <View style={{ marginLeft: 10, alignItems: 'flex-end', justifyContent: 'center' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                              <TouchableOpacity 
+                                  style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#4B8BF5', justifyContent: 'center', alignItems: 'center', marginRight: 8 }}
+                                  onPress={() => {
+                                      if (selectedMarker.location && selectedMarker.location.coordinates) {
+                                          Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${selectedMarker.location.coordinates[1]},${selectedMarker.location.coordinates[0]}`);
+                                      }
+                                  }}
+                              >
+                                  <Ionicons name="navigate" color="#FFF" size={16} />
+                              </TouchableOpacity>
+                              
+                              <TouchableOpacity 
+                                  style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', marginRight: 8 }}
+                                  onPress={() => {
+                                      const p = selectedMarker.donor?.mobileNumber || '';
+                                      if(p) {
+                                          let num = formatPhoneNumber(p, false);
+                                          Linking.openURL(`tel:${num}`).catch(e => alert("Could not open dialer"));
+                                      } else { alert("No mobile number available"); }
+                                  }}
+                              >
+                                  <Ionicons name="call" color="#2F7B5E" size={16} />
+                              </TouchableOpacity>
+                              
+                              <TouchableOpacity 
+                                  style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#30D158', justifyContent: 'center', alignItems: 'center' }}
+                                  onPress={async () => {
+                                      const p = selectedMarker.donor?.mobileNumber || '';
+                                      if(p) {
+                                          let num = formatPhoneNumber(p, true);
+                                          const userName = user?.fullName || 'a ShareCircle user';
+                                          const message = `*ShareCircle *\n\nHello, I hope you are doing well \n\nI am *${userName}*, and I am looking for *${selectedMarker.title}*. If you happen to have one available and are willing to donate or share, it would truly mean a lot to me.\n\nThank you so much for your kindness and support ❤️`;
+                                          const encodedMsg = encodeURIComponent(message);
+                                          Linking.openURL(`https://wa.me/${num}?text=${encodedMsg}`).catch(e => alert("Could not open WhatsApp"));
+                                      } else { alert("No mobile number available"); }
+                                  }}
+                              >
+                                  <MaterialCommunityIcons name="whatsapp" color="#FFF" size={18} />
+                              </TouchableOpacity>
+                          </View>
+                      </View>
+                  </View>
+              )}
         </View>
+
+        {/* Nearby Header */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <Text style={{ fontSize: 18, fontWeight: '800', color: '#1E293B' }}>Donated Items Nearby</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#E2F0E8', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 }}>
+             <Feather name="refresh-cw" color="#2F7B5E" size={14} style={{ marginRight: 6 }} />
+             <TextInput
+               style={{ fontSize: 14, fontWeight: '700', color: '#2F7B5E', minWidth: 16, textAlign: 'center', padding: 0 }}
+               value={radiusInput}
+               onChangeText={setRadiusInput}
+               keyboardType="numeric"
+               maxLength={3}
+             />
+             <Text style={{ fontSize: 14, color: '#2F7B5E', fontWeight: '700' }}> km</Text>
+             <Feather name="chevron-right" color="#2F7B5E" size={14} style={{ marginLeft: 2 }} />
+          </View>
+        </View>
+
+        {/* Items List */}
+        {nearbyItems.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 40, backgroundColor: '#FFF', borderRadius: 24 }}>
+                <Text style={{ color: '#64748B', fontSize: 16 }}>No items found nearby 📍</Text>
+            </View>
+        ) : (
+            nearbyItems.map((item, index) => {
+                const creator = item.donor;
+                const minutesAgo = Math.max(0, Math.floor((new Date() - new Date(item.createdAt)) / 60000));
+                let timeStr = `${minutesAgo} mins ago`;
+                if (minutesAgo > 60) timeStr = `${Math.floor(minutesAgo/60)} hrs ago`;
+                if (minutesAgo > 1440) timeStr = `${Math.floor(minutesAgo/1440)} days ago`;
+
+                const phone = creator?.mobileNumber || '';
+
+                return (
+                    <View key={item._id} style={{ flexDirection: 'row', padding: 14, backgroundColor: '#FFF', borderRadius: 20, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 }}>
+                        <TouchableOpacity 
+                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                            onPress={() => navigation.navigate('DonationDetail', { item, userLocation: location })}
+                        >
+                            <Image source={{ uri: item.image || item.imageUrl || 'https://via.placeholder.com/150' }} style={{ width: 85, height: 85, borderRadius: 14, marginRight: 14, backgroundColor: '#E2E8F0' }} />
+                            
+                            <View style={{ flex: 1, justifyContent: 'center' }}>
+                                <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#1E293B', marginBottom: 4 }} numberOfLines={1}>{creator?.fullName || 'Anonymous'}</Text>
+                                <Text style={{ fontSize: 14, color: '#334155', fontWeight: '600', marginBottom: 4 }}>{item.title}</Text>
+                                <Text style={{ fontSize: 12, color: '#64748B' }}>Uploaded <Feather name="refresh-cw" size={10} /> {timeStr}</Text>
+                            </View>
+                        </TouchableOpacity>
+                        
+                        <View style={{ marginLeft: 10, alignItems: 'flex-end', justifyContent: 'center' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                                <TouchableOpacity 
+                                    style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#4B8BF5', justifyContent: 'center', alignItems: 'center', marginRight: 8 }}
+                                    onPress={() => {
+                                        if (item.location && item.location.coordinates) {
+                                            Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${item.location.coordinates[1]},${item.location.coordinates[0]}`);
+                                        }
+                                    }}
+                                >
+                                    <Ionicons name="navigate" color="#FFF" size={16} />
+                                </TouchableOpacity>
+                                
+                                <TouchableOpacity 
+                                    style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', marginRight: 8 }}
+                                    onPress={() => {
+                                        if(phone) {
+                                            let num = formatPhoneNumber(phone, false);
+                                            Linking.openURL(`tel:${num}`).catch(e => alert("Could not open dialer"));
+                                        } else { alert("No mobile number available"); }
+                                    }}
+                                >
+                                    <Ionicons name="call" color="#2F7B5E" size={16} />
+                                </TouchableOpacity>
+                                
+                                <TouchableOpacity 
+                                    style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#30D158', justifyContent: 'center', alignItems: 'center' }}
+                                    onPress={async () => {
+                                        if(phone) {
+                                            let p = formatPhoneNumber(phone, true);
+                                            const userName = user?.fullName || 'a ShareCircle user';
+                                            const message = `*ShareCircle *\n\nHello, I hope you are doing well \n\nI am *${userName}*, and I am looking for *${item.title}*. If you happen to have one available and are willing to donate or share, it would truly mean a lot to me.\n\nThank you so much for your kindness and support ❤️`;
+                                            const encodedMsg = encodeURIComponent(message);
+                                            Linking.openURL(`https://wa.me/${p}?text=${encodedMsg}`).catch(e => alert("Could not open WhatsApp"));
+                                        } else { alert("No mobile number available"); }
+                                    }}
+                                >
+                                    <MaterialCommunityIcons name="whatsapp" color="#FFF" size={18} />
+                                </TouchableOpacity>
+                            </View>
+                            <TouchableOpacity 
+                                style={{ backgroundColor: '#2F7B5E', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, alignItems: 'center', width: '100%' }}
+                                onPress={async () => {
+                                    try {
+                                        const res = await fetch(`${API_URL}/donations/${item._id}/request`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ requesterId: user?._id, message: `I would like to request ${item.title}` })
+                                        });
+                                        const data = await res.json();
+                                        if (data.success) {
+                                            Alert.alert("Success", "Request sent! Check the Requests tab for updates.");
+                                        } else {
+                                            Alert.alert("Notice", data.message);
+                                        }
+                                    } catch (error) {
+                                        Alert.alert("Error", "Could not send request.");
+                                    }
+                                }}
+                            >
+                                <Text style={{ color: '#FFF', fontSize: 12, fontWeight: 'bold' }}>Request</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                );
+            })
+        )}
 
         {/* Your Impact Section */}
         <View style={styles.impactCard}>
           <View style={styles.impactHeader}>
-            <Text style={styles.impactTitle}>Your Impact</Text>
+            <View>
+              <Text style={styles.impactTitle}>Your Impact</Text>
+              <Text style={styles.impactMotto}>Making a difference | ~y</Text>
+            </View>
             <View style={styles.levelBadge}>
               <Text style={styles.levelText}>LEVEL 1</Text>
               <View style={styles.levelDots}>
@@ -259,49 +663,48 @@ const DashboardScreen = ({ navigation }) => {
               </View>
             </View>
           </View>
-          <Text style={styles.impactMotto}>Making a difference 🌿</Text>
           
           <View style={styles.statsGrid}>
-            <View style={styles.statItem}>
-              <View style={[styles.statIconBg, { backgroundColor: '#F0FDF4' }]}>
-                 <Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/3063/3063822.png' }} style={styles.statIcon} />
-              </View>
-              <Text style={styles.statValue}>5</Text>
-              <Text style={styles.statLabel}>Donations</Text>
-            </View>
-            
-            <View style={styles.statItemDivider} />
+             <View style={styles.impactStatBlock}>
+                <View style={styles.impactStatValRow}>
+                  <MaterialCommunityIcons name="gift" color="#54B489" size={24} style={{marginRight: 6}} />
+                  <Text style={styles.statValue}>{historyStats.donations}</Text>
+                </View>
+                <Text style={styles.statLabel}>Donations</Text>
+             </View>
+             
+             <View style={styles.verticalDivider} />
 
-            <View style={styles.statItem}>
-              <View style={[styles.statIconBg, { backgroundColor: '#FEF2F2' }]}>
-                 <MaterialCommunityIcons name="heart" color="#EF4444" size={20} />
-              </View>
-              <Text style={styles.statValue}>3</Text>
-              <Text style={styles.statLabel}>Lives</Text>
-            </View>
+             <View style={styles.impactStatBlock}>
+                <View style={styles.impactStatValRow}>
+                  <MaterialCommunityIcons name="heart" color="#4B8BF5" size={22} style={{marginRight: 6}} />
+                  <Text style={styles.statValue}>{historyStats.donations * 5}</Text>
+                </View>
+                <Text style={styles.statLabel}>Lives</Text>
+             </View>
 
-            <View style={styles.statItemDivider} />
+             <View style={styles.verticalDivider} />
 
-            <View style={styles.statItem}>
-              <View style={[styles.statIconBg, { backgroundColor: '#FFFBEB' }]}>
-                 <MaterialCommunityIcons name="trophy" color="#F59E0B" size={20} />
-              </View>
-              <Text style={styles.statValue}>75</Text>
-              <Text style={styles.statLabel}>Points</Text>
-            </View>
+             <View style={styles.impactStatBlock}>
+                <View style={styles.impactStatValRow}>
+                  <MaterialCommunityIcons name="star" color="#F5B041" size={24} style={{marginRight: 6}} />
+                  <Text style={styles.statValue}>{historyStats.points}</Text>
+                </View>
+                <Text style={styles.statLabel}>Points</Text>
+             </View>
           </View>
         </View>
 
-        <View style={{ height: 100 }} />
+        <View style={{ height: 120 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAFAFA',
   },
   scrollContent: {
     paddingHorizontal: 20,
@@ -311,11 +714,111 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
+    height: 60,
   },
-  logo: {
-    width: 120,
-    height: 40,
+  menuIconBtn: {
+    width: 44,
+    height: 44,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoContainerCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    justifyContent: 'center',
+    zIndex: -1,
+  },
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sidebarOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+    flexDirection: 'row',
+  },
+  sidebarBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  sidebarContent: {
+    width: width * 0.75,
+    height: '100%',
+    backgroundColor: '#FFF',
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 4, height: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 20,
+  },
+  sidebarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  sidebarItems: {
+    flex: 1,
+  },
+  sidebarItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  sidebarIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  sidebarLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  sidebarDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 16,
+  },
+  sidebarFooter: {
+    paddingBottom: 40,
+    alignItems: 'center',
+  },
+  versionText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  logoRing: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 4,
+    borderColor: '#2F7B5E',
+    borderTopColor: '#F39C12',
+    marginRight: 8,
+    transform: [{ rotate: '-45deg' }],
+  },
+  logoText: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0F2C20',
   },
   headerRight: {
     flexDirection: 'row',
@@ -323,18 +826,21 @@ const styles = StyleSheet.create({
   },
   roleToggle: {
     flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F0F4F4',
     borderRadius: 20,
     padding: 3,
-    marginRight: 10,
+    marginRight: 12,
   },
   roleButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 15,
+    borderRadius: 16,
   },
   roleButtonActive: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     backgroundColor: '#FFF',
+    borderRadius: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -344,29 +850,30 @@ const styles = StyleSheet.create({
   roleText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#64748B',
+    color: '#8A9B94',
   },
   roleTextActive: {
-    color: '#334155',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#111',
   },
-  avatarContainer: {
+  notificationBtn: {
+    width: 44,
+    height: 44,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
     position: 'relative',
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: '#FFF',
   },
   notificationBadge: {
     position: 'absolute',
-    top: -2,
-    right: -2,
-    backgroundColor: '#EF4444',
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    top: 6,
+    right: 6,
+    backgroundColor: '#E74C3C',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
@@ -374,96 +881,138 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     color: '#FFF',
-    fontSize: 9,
-    fontWeight: '900',
+    fontSize: 8,
+    fontWeight: 'bold',
   },
   welcomeSection: {
     marginBottom: 24,
   },
   greetingText: {
-    fontSize: 20,
+    fontSize: 22,
     color: '#475569',
-    fontWeight: '500',
+    fontWeight: '400',
   },
   userName: {
-    fontSize: 22,
     fontWeight: '800',
     color: '#1E293B',
   },
   subGreetingText: {
     fontSize: 14,
     color: '#64748B',
-    marginTop: 4,
+    marginTop: 6,
   },
   primaryActionCard: {
     backgroundColor: '#FFF',
-    borderRadius: 24,
+    borderRadius: 32,
     padding: 24,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 15,
-    elevation: 8,
-    marginBottom: 20,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 5,
+    marginBottom: 26,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    overflow: 'hidden',
+    position: 'relative',
   },
   cardInfo: {
-    flex: 1,
+    flex: 1.4,
+    zIndex: 10,
+  },
+  heartIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
   },
   iconTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '900',
     color: '#1E293B',
-    marginLeft: 8,
+    letterSpacing: -0.5,
   },
   cardSubtitle: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#64748B',
-    lineHeight: 20,
-    marginBottom: 16,
+    lineHeight: 22,
+    marginBottom: 20,
+    fontWeight: '500',
   },
   donateButton: {
-    backgroundColor: '#F39C12', // Warm orange like in image
+    backgroundColor: '#F39C12',
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
     alignSelf: 'flex-start',
+    shadowColor: '#F39C12',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   donateButtonText: {
     color: '#FFF',
-    fontWeight: '700',
+    fontWeight: '800',
     fontSize: 14,
+    textTransform: 'uppercase',
   },
-  cardIllustration: {
-    width: 120,
-    height: 100,
+  cardImageContainer: {
+    flex: 1,
+    height: 140,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  cardDecorativeCircle: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: '#F0FDF4',
+    right: -40,
+    bottom: -40,
+    zIndex: 0,
+  },
+  cardIllustrationLarge: {
+    width: 130,
+    height: 130,
+    zIndex: 1,
+    resizeMode: 'contain',
+    transform: [{ rotate: '-5deg' }],
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFF',
-    borderRadius: 20,
+    borderRadius: 30,
     padding: 12,
-    paddingRight: 20,
-    marginBottom: 24,
+    paddingRight: 16,
+    marginBottom: 30,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
     elevation: 3,
   },
   searchIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#F0FDF4',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F0F9F4',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -473,27 +1022,38 @@ const styles = StyleSheet.create({
   },
   searchTextTitle: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#1E293B',
+    marginBottom: 2,
   },
   searchTextSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
+    fontSize: 13,
+    color: '#2F7B5E',
+    fontWeight: '500',
+  },
+  arrowIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F0F9F4',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#1E293B',
   },
   viewAllText: {
-    color: '#10B981',
-    fontWeight: '600',
+    color: '#2F7B5E',
+    fontWeight: '700',
+    fontSize: 14,
   },
   requestCardContainer: {
     backgroundColor: '#FFF',
@@ -501,22 +1061,14 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.05,
-    shadowRadius: 10,
+    shadowRadius: 15,
     elevation: 4,
   },
   mapPlaceholder: {
-    height: 120,
+    height: 130,
     backgroundColor: '#E2E8F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  mapMarker: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -526,131 +1078,157 @@ const styles = StyleSheet.create({
   requestUserRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingBottom: 16,
   },
   requestAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     marginRight: 12,
   },
   requestUserInfo: {
     flex: 1,
   },
   requestUserName: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '800',
     color: '#1E293B',
   },
   requestTimeText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#94A3B8',
+    fontWeight: '500',
   },
   distanceBadge: {
     backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
   },
   distanceText: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
+  },
+  titleIconRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  titleContainer: {
+    flex: 1,
   },
   requestTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '800',
     color: '#1E293B',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   requestCategory: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#64748B',
-    marginBottom: 16,
+    fontWeight: '500',
   },
-  actionRow: {
+  actionsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
   },
-  urgentBadge: {
-    backgroundColor: '#F97316',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginRight: 'auto',
-  },
-  urgentText: {
-    color: '#FFF',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  circularActionBtn: {
+  circularCallBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#F0FDF4',
+    backgroundColor: '#FFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  circularNavBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#4B8BF5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
+    shadowColor: '#4B8BF5',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  circularWhatsappBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#30D158',
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 12,
+    shadowColor: '#30D158',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  progressContainer: {
-    flexDirection: 'row',
+  fullWidthActionBtn: {
+    backgroundColor: '#E2F0E8',
+    paddingVertical: 12,
+    borderRadius: 12,
     alignItems: 'center',
+    marginTop: 5,
   },
-  progressBarBg: {
-    flex: 1,
-    height: 8,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 4,
-    marginRight: 12,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#10B981',
-    borderRadius: 4,
-  },
-  progressText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1E293B',
+  fullWidthActionBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#2F7B5E',
   },
   impactCard: {
-    backgroundColor: '#FFF',
+    backgroundColor: '#F4F9F6',
     borderRadius: 24,
     padding: 20,
     marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 4,
   },
   impactHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: 20,
   },
   impactTitle: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#1E293B',
+    marginBottom: 4,
+  },
+  impactMotto: {
+    fontSize: 13,
+    color: '#2F7B5E',
+    fontWeight: '600',
   },
   levelBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0FDF4',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    backgroundColor: '#D1EAE0',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
   levelText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
-    color: '#10B981',
-    marginRight: 6,
+    color: '#2F7B5E',
+    marginRight: 8,
   },
   levelDots: {
     flexDirection: 'row',
@@ -659,52 +1237,40 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#CBD5E1',
-    marginLeft: 3,
+    backgroundColor: '#A0D0B6',
+    marginLeft: 4,
   },
   dotActive: {
-    backgroundColor: '#10B981',
-  },
-  impactMotto: {
-    fontSize: 12,
-    color: '#64748B',
-    marginBottom: 20,
+    backgroundColor: '#2F7B5E',
   },
   statsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  statItem: {
+  impactStatBlock: {
     flex: 1,
     alignItems: 'center',
   },
-  statIconBg: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
+  impactStatValRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
-  },
-  statIcon: {
-    width: 20,
-    height: 20,
+    marginBottom: 4,
   },
   statValue: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
     color: '#1E293B',
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: 12,
+    fontWeight: '600',
     color: '#64748B',
-    marginTop: 2,
   },
-  statItemDivider: {
+  verticalDivider: {
     width: 1,
     height: 40,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#D1EAE0',
   }
 });
 

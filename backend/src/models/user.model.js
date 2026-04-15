@@ -33,6 +33,10 @@ const userSchema = new mongoose.Schema({
     enum: ['user', 'admin'],
     default: 'user',
   },
+  pushToken: {
+    type: String,
+    default: null,
+  },
   // Profile fields (can be updated after registration)
   address: {
     street: String,

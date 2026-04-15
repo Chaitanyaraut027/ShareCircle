@@ -17,6 +17,16 @@ const RegisterScreen = ({ navigation }) => {
             return;
         }
 
+        if (mobileNumber.length !== 10) {
+            Alert.alert('Error', 'Mobile number must be exactly 10 digits');
+            return;
+        }
+
+        if (!email.includes('@')) {
+            Alert.alert('Error', 'Email must be valid and contain @');
+            return;
+        }
+
         setLoading(true);
         try {
             const userData = {
