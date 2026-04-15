@@ -19,8 +19,8 @@ try {
         serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     } 
     // 2. Fallback to local file (For local development)
-    else if (readFileSync(serviceAccountPath, 'utf8')) {
-        serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
+    else if (require('fs').existsSync(serviceAccountPath)) {
+        serviceAccount = JSON.parse(require('fs').readFileSync(serviceAccountPath, 'utf8'));
     }
 
     if (serviceAccount) {

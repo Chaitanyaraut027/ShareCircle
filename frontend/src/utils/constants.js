@@ -1,12 +1,17 @@
 import { Platform } from 'react-native';
 
 const getApiUrl = () => {
+    // ALWAYS use the live Render URL for production/testing on devices
+    return 'https://sharecircle-4215.onrender.com/api';
+    
+    /* 
+    // Fallback for local development
     if (Platform.OS === 'web') {
         return 'http://localhost:5000/api';
     } else {
-        // Use the PC's Local IP address so physical devices (via USB or WiFi) can access the backend
         return 'http://192.168.92.117:5000/api';
     }
+    */
 };
 
 export const API_URL = getApiUrl();
