@@ -103,8 +103,11 @@ export const generateAIDescription = async (req, res) => {
             description: text.trim()
         });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, message: 'Failed to generate description' });
+        console.error('Gemini AI Error:', error.message);
+        res.status(500).json({ 
+            success: false, 
+            message: `AI failed: ${error.message || 'Check your Gemini API Key in Render Environment Variables'}` 
+        });
     }
 };
 
