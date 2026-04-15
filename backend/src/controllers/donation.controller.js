@@ -91,12 +91,36 @@ export const generateAIDescription = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Title and category are required' });
         }
 
-        const model = genAI.getGenerativeModel({ model: "gemini-pro" }); 
-        const prompt = `Write a short, engaging description for an item being donated. The title of the item is "${title}" and it belongs to the category "${category}". Keep it under 3 sentences, sound warm and helpful.`;
+        const modelNames = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-pro", "gemini-1.0-pro"];
+        let text = "";
+        let success = false;
+        let lastErrorMsg = "";
 
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
+        for (const modelName of modelNames) {
+            try {
+                console.log(`Trying Gemini model: ${modelName}...`);
+                const model = genAI.getGenerativeModel({ model: modelName });
+                const prompt = `Write a short, engaging description for an item being donated. The title of the item is "${title}" and it belongs to the category "${category}". Keep it under 3 sentences, sound warm and helpful.`;
+
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                text = response.text();
+                
+                if (text) {
+                    success = true;
+                    console.log(`✅ Success with model: ${modelName}`);
+                    break;
+                }
+            } catch (err) {
+                console.warn(`❌ Model ${modelName} failed:`, err.message);
+                lastErrorMsg = err.message;
+                continue;
+            }
+        }
+
+        if (!success) {
+            throw new Error(lastErrorMsg || "All Gemini models failed to respond.");
+        }
 
         res.status(200).json({
             success: true,
