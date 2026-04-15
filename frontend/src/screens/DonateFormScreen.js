@@ -103,6 +103,14 @@ const DonateFormScreen = ({ navigation }) => {
 
         setLoading(true);
         try {
+            // Request permissions for geocoding (some devices/Expo versions require this)
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission Denied', 'Location access is needed to search for an address.');
+                setLoading(false);
+                return;
+            }
+
             const query = `${addressLine1}${addressLine2 ? ', ' + addressLine2 : ''}, ${city}, ${stateName}`;
             const results = await Location.geocodeAsync(query);
             if (results && results.length > 0) {

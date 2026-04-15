@@ -100,6 +100,14 @@ const ProfileScreen = ({ navigation, route }) => {
 
         setLocLoading(true);
         try {
+            // Request permissions before geocoding
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission Required', 'Please allow location access to search for an address.');
+                setLocLoading(false);
+                return;
+            }
+
             const query = `${addressLine1}${addressLine2 ? ', ' + addressLine2 : ''}, ${city}, ${state}`;
             
             const results = await Location.geocodeAsync(query);
