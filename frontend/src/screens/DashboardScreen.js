@@ -359,7 +359,7 @@ const DashboardScreen = ({ navigation }) => {
           <View style={styles.cardImageContainer}>
              <View style={styles.cardDecorativeCircle} />
              <Image 
-               source={require('../../assets/donation_hero_v2.png')} 
+               source={require('../../assets/donation_hero_clean.png')} 
                style={styles.cardIllustrationLarge}
              />
           </View>

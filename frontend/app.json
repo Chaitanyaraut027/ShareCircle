@@ -20,7 +20,10 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.anonymous.ShareCircle"
+      "package": "com.anonymous.ShareCircle",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -33,6 +36,12 @@
           "cameraPermission": "The app needs to access your camera to take photos of items you want to donate."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "7d330119-2fb5-402c-ac18-f557d325a946"
+      }
+    },
+    "owner": "chaitanya4831"
   }
 }
