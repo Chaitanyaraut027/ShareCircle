@@ -91,7 +91,7 @@ export const generateAIDescription = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Title and category are required' });
         }
 
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" }); 
         const prompt = `Write a short, engaging description for an item being donated. The title of the item is "${title}" and it belongs to the category "${category}". Keep it under 3 sentences, sound warm and helpful.`;
 
         const result = await model.generateContent(prompt);
