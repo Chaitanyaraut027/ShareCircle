@@ -136,20 +136,23 @@ const DonateFormScreen = ({ navigation }) => {
             return;
         }
         
+        setLoading(true);
         try {
-            const response = await fetch(`${API_URL}/donations/generate-description`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, category })
+            const response = await axios.post(`${API_URL}/donations/generate-description`, { 
+                title, 
+                category 
             });
-            const data = await response.json();
-            if (data.success) {
-                setDescription(data.description);
+            
+            if (response.data.success) {
+                setDescription(response.data.description);
             } else {
-                Alert.alert('Error', data.message || 'AI generate failed');
+                Alert.alert('Error', response.data.message || 'AI generate failed');
             }
         } catch (error) {
-            Alert.alert('Error', 'Could not reach server to generate AI description.');
+            console.error('AI Gen Error:', error);
+            Alert.alert('Error', 'Could not reach server. Please wait for the Render backend to wake up and try again.');
+        } finally {
+            setLoading(false);
         }
     };
 
