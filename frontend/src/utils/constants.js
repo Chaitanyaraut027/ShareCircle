@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 
 const getApiUrl = () => {
     // ALWAYS use the live Render URL for production/testing on devices
-    return 'https://sharecircle-4215.onrender.com/api';
+    return 'https://sharecircle-h4b2.onrender.com/api';
     
     /* 
     // Fallback for local development
