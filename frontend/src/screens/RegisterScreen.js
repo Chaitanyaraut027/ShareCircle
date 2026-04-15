@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, SafeAreaView, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import styles from '../styles/Auth';
 import { registerUser } from '../services/api';
 
@@ -13,6 +14,16 @@ const RegisterScreen = ({ navigation }) => {
     const handleRegister = async () => {
         if (!fullName || !mobileNumber || !email || !password) {
             Alert.alert('Error', 'Please fill in all fields');
+            return;
+        }
+
+        if (mobileNumber.length !== 10) {
+            Alert.alert('Error', 'Mobile number must be exactly 10 digits');
+            return;
+        }
+
+        if (!email.includes('@')) {
+            Alert.alert('Error', 'Email must be valid and contain @');
             return;
         }
 

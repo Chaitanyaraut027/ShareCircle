@@ -20,7 +20,7 @@ const SplashScreenComponent = ({ navigation }) => {
                 console.warn(e);
             } finally {
                 await SplashScreen.hideAsync();
-                navigation.replace('Welcome'); // Navigate to Welcome (which leads to Login/Register)
+                navigation.replace('Onboarding'); // Navigate to Onboarding sliders
             }
         };
 

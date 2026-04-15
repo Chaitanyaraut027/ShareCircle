@@ -1,7 +1,15 @@
-// export const API_URL = 'http://10.0.2.2:5000/api'; // For Android Emulator
-export const API_URL = 'http://localhost:5000/api'; // For Web
-// export const API_URL = 'http://192.168.x.x:5000/api'; // For Physical Device (Replace with your IP)
-// export const API_URL = 'https://abc123.ngrok-free.app/api';
+import { Platform } from 'react-native';
+
+const getApiUrl = () => {
+    if (Platform.OS === 'web') {
+        return 'http://localhost:5000/api';
+    } else {
+        // Use the PC's Local IP address so physical devices (via USB or WiFi) can access the backend
+        return 'http://192.168.92.117:5000/api';
+    }
+};
+
+export const API_URL = getApiUrl();
 
 export const TAGLINES = [
     "Share what you have. Change someone’s world.",

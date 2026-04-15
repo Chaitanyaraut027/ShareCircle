@@ -1,6 +1,7 @@
 import User from '../models/user.model.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { uploadOnCloudinary } from '../utils/cloudinary.js';
 
 // @desc    Register a new user
 // @route   POST /api/auth/register
@@ -54,16 +55,14 @@ export const register = async (req, res) => {
                 httpOnly: true,
             };
 
+            const userObj = user.toObject();
+            delete userObj.password;
+
             res.status(201).cookie('token', token, options).json({
                 success: true,
                 token,
                 message: 'User registered successfully',
-                data: {
-                    _id: user._id,
-                    fullName: user.fullName,
-                    email: user.email,
-                    role: user.role,
-                },
+                data: userObj,
             });
         } else {
             res.status(400).json({ success: false, message: 'Invalid user data' });
@@ -108,15 +107,13 @@ export const login = async (req, res) => {
             httpOnly: true,
         };
 
+        const userObj = user.toObject();
+        delete userObj.password;
+
         res.status(200).cookie('token', token, options).json({
             success: true,
             token,
-            data: {
-                _id: user._id,
-                fullName: user.fullName,
-                email: user.email,
-                role: user.role,
-            },
+            data: userObj,
         });
     } catch (error) {
         console.error(error);
@@ -137,4 +134,119 @@ export const logout = async (req, res) => {
         success: true,
         data: {},
     });
+};
+
+// @desc    Update user location
+// @route   PUT /api/auth/update-location
+// @access  Public (simplified)
+export const updateLocation = async (req, res) => {
+    try {
+        const { userId, latitude, longitude, address } = req.body;
+        
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'User ID is required' });
+        }
+        
+        const updateQuery = {};
+        
+        if (latitude !== undefined && longitude !== undefined) {
+            updateQuery.location = {
+                type: 'Point',
+                coordinates: [Number(longitude), Number(latitude)]
+            };
+        }
+        
+        if (address) {
+            updateQuery['address.fullAddress'] = address;
+        }
+
+        // Use $set to update specific fields without overwriting everything
+        const user = await User.findByIdAndUpdate(
+            userId, 
+            { $set: updateQuery }, 
+            { new: true, runValidators: false } // Avoid validation errors on subfields
+        );
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+        
+        res.status(200).json({ 
+            success: true, 
+            message: 'Location updated successfully', 
+            user 
+        });
+    } catch (error) {
+        console.error('Update Location Error:', error);
+        res.status(500).json({ success: false, message: 'Server error updating location' });
+    }
+};
+
+// @desc    Update user profile picture
+// @route   PUT /api/auth/update-profile-picture
+// @access  Public (simplified)
+export const updateProfilePicture = async (req, res) => {
+    try {
+        const { userId } = req.body;
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'User ID is required' });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'No image provided' });
+        }
+
+        const uploaded = await uploadOnCloudinary(req.file.path);
+        if (!uploaded) {
+            return res.status(500).json({ success: false, message: 'Failed to upload image' });
+        }
+
+        const user = await User.findByIdAndUpdate(
+            userId,
+            { profilePic: uploaded.secure_url },
+            { new: true, runValidators: false }
+        );
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Profile picture updated successfully',
+            user
+        });
+    } catch (error) {
+        console.error('Update Profile Picture Error:', error);
+        res.status(500).json({ success: false, message: 'Server error updating profile picture' });
+    }
+};
+// @desc    Update push token
+// @route   PUT /api/auth/update-push-token
+// @access  Public (simplified)
+export const updatePushToken = async (req, res) => {
+    try {
+        const { userId, pushToken } = req.body;
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'User ID is required' });
+        }
+
+        const user = await User.findByIdAndUpdate(
+            userId,
+            { pushToken },
+            { new: true, runValidators: false }
+        );
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Push token updated successfully'
+        });
+    } catch (error) {
+        console.error('Update Push Token Error:', error);
+        res.status(500).json({ success: false, message: 'Server error updating push token' });
+    }
 };

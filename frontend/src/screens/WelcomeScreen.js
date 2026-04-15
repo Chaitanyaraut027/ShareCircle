@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Dimensions, SafeAreaView, StatusBar } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, Dimensions, StatusBar } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import styles from '../styles/Welcome';
 import { TAGLINES, COLORS } from '../utils/constants';
 
