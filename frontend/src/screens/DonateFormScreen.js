@@ -162,7 +162,8 @@ const DonateFormScreen = ({ navigation }) => {
         } catch (error) {
             clearTimeout(timeoutId);
             console.error('AI Gen Error:', error);
-            Alert.alert('AI gen facing error', 'Could not reach AI service. Please type manually or try again later.');
+            const errMsg = error.response?.data?.message || 'Could not reach AI service. Please type manually or try again later.';
+            Alert.alert('AI gen facing error', errMsg);
         } finally {
             setAiLoading(false);
         }
