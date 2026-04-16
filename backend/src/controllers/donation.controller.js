@@ -91,7 +91,7 @@ export const generateAIDescription = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Title and category are required' });
         }
 
-        const modelNames = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-pro", "gemini-1.0-pro"];
+        const modelNames = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
         let text = "";
         let success = false;
         let lastErrorMsg = "";
