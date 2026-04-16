@@ -82,43 +82,53 @@ export const generateAIDescription = async (req, res) => {
         const { title, category } = req.body;
 
         if (!process.env.GEMINI_API_KEY) {
-            return res.status(503).json({ success: false, message: 'Gemini API not configured' });
+            console.error('❌ GEMINI_API_KEY is not set in environment variables!');
+            return res.status(503).json({ success: false, message: 'AI service not configured. GEMINI_API_KEY missing on server.' });
         }
-
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
         if (!title || !category) {
             return res.status(400).json({ success: false, message: 'Title and category are required' });
         }
 
-        const modelNames = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+        // Use pinned stable model IDs to avoid version resolution issues
+        const modelNames = [
+            "gemini-2.0-flash-001",
+            "gemini-2.0-flash",
+            "gemini-2.5-flash",
+            "gemini-1.5-flash-001",
+            "gemini-1.5-flash"
+        ];
+
         let text = "";
         let success = false;
         let lastErrorMsg = "";
 
         for (const modelName of modelNames) {
             try {
-                console.log(`Trying Gemini model: ${modelName}...`);
+                console.log(`🔄 Trying Gemini model: ${modelName}...`);
                 const model = genAI.getGenerativeModel({ model: modelName });
                 const prompt = `Write a short, engaging description for an item being donated. The title of the item is "${title}" and it belongs to the category "${category}". Keep it under 3 sentences, sound warm and helpful.`;
 
                 const result = await model.generateContent(prompt);
                 const response = await result.response;
                 text = response.text();
-                
-                if (text) {
+
+                if (text && text.trim().length > 0) {
                     success = true;
                     console.log(`✅ Success with model: ${modelName}`);
                     break;
                 }
             } catch (err) {
-                console.warn(`❌ Model ${modelName} failed:`, err.message);
+                console.warn(`❌ Model ${modelName} failed: ${err.message}`);
                 lastErrorMsg = err.message;
                 continue;
             }
         }
 
         if (!success) {
+            console.error('🚫 All Gemini models failed. Last error:', lastErrorMsg);
             throw new Error(lastErrorMsg || "All Gemini models failed to respond.");
         }
 
@@ -128,9 +138,9 @@ export const generateAIDescription = async (req, res) => {
         });
     } catch (error) {
         console.error('Gemini AI Error:', error.message);
-        res.status(500).json({ 
-            success: false, 
-            message: `AI failed: ${error.message || 'Check your Gemini API Key in Render Environment Variables'}` 
+        res.status(500).json({
+            success: false,
+            message: `AI failed: ${error.message || 'Check your Gemini API Key in Render Environment Variables'}`
         });
     }
 };
