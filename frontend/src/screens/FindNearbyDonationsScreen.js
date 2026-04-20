@@ -63,6 +63,7 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
     const [radius, setRadius] = useState(5);
     const [donations, setDonations] = useState([]);
     const [location, setLocation] = useState(null);
+    const [mapRegion, setMapRegion] = useState(null);
     const [userId, setUserId] = useState(null);
     const [loading, setLoading] = useState(true);
     const [selectedMarker, setSelectedMarker] = useState(null);
@@ -332,12 +333,13 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
                     <>
                         <FreeMap 
                             style={styles.map}
-                            region={{
+                            region={mapRegion || (location ? {
                                 latitude: location.latitude,
                                 longitude: location.longitude,
                                 latitudeDelta: (radius / 111.32) * 2.2, 
                                 longitudeDelta: (radius / 111.32) * 2.2,
-                            }}
+                            } : null)}
+                            onRegionChangeComplete={(reg) => setMapRegion(reg)}
                             userLocation={location}
                             circle={{
                                 latitude: location.latitude,
@@ -356,19 +358,11 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
                         <View style={mStyles.mapControls}>
                             <TouchableOpacity 
                                 style={mStyles.controlBtn} 
-                                onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
-                            >
-                                <MaterialCommunityIcons name={mapType === 'standard' ? "layers-outline" : "map-outline"} size={22} color="#1E293B" />
-                            </TouchableOpacity>
-
-                            <TouchableOpacity 
-                                style={mStyles.controlBtn} 
                                 onPress={() => setIsFullScreen(!isFullScreen)}
                             >
                                 <Ionicons name={isFullScreen ? "contract" : "expand"} size={22} color="#1E293B" />
                             </TouchableOpacity>
                         </View>
-
                         {isFullScreen && (
                             <TouchableOpacity 
                                 style={mStyles.backBtn}

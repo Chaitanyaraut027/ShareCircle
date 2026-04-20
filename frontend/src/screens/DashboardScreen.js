@@ -484,13 +484,6 @@ const DashboardScreen = ({ navigation }) => {
                   <View style={mStyles.mapControls}>
                     <TouchableOpacity 
                       style={mStyles.controlBtn} 
-                      onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
-                    >
-                      <MaterialCommunityIcons name={mapType === 'standard' ? "layers-outline" : "map-outline"} size={22} color="#1E293B" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity 
-                      style={mStyles.controlBtn} 
                       onPress={() => setIsFullScreen(!isFullScreen)}
                     >
                       <Ionicons name={isFullScreen ? "contract" : "expand"} size={22} color="#1E293B" />

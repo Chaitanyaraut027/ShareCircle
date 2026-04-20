@@ -29,6 +29,7 @@ const ProfileScreen = ({ navigation, route }) => {
     const [landmark, setLandmark] = useState('');
     const [pincode, setPincode] = useState('');
     const [coords, setCoords] = useState(null);
+    const [mapRegion, setMapRegion] = useState(null);
     const [showMap, setShowMap] = useState(false);
     const [mapType, setMapType] = useState('standard');
     const [isFullScreen, setIsFullScreen] = useState(false);
@@ -178,6 +179,7 @@ const ProfileScreen = ({ navigation, route }) => {
                     const { latitude, longitude } = results[0];
                     const newCoords = { latitude, longitude };
                     setCoords(newCoords);
+                    setMapRegion(newCoords);
                     setShowMap(false);
                     setIsFullScreen(true);
                     setIsAdjustMode(false);
@@ -505,17 +507,12 @@ const ProfileScreen = ({ navigation, route }) => {
                                 <Ionicons name="arrow-back" size={28} color="#FFF" />
                             </TouchableOpacity>
                             <Text style={styles.fullMapTitle}>Adjust Location</Text>
-                            <TouchableOpacity 
-                                style={styles.fullMapTypeBtn}
-                                onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
-                            >
-                                <Ionicons name="layers" size={24} color="#FFF" />
-                            </TouchableOpacity>
                         </View>
                         <FreeMap
                             style={styles.fullMap}
-                            region={coords ? { ...coords, latitudeDelta: 0.005, longitudeDelta: 0.005 } : null}
+                            region={mapRegion || (coords ? { ...coords, latitudeDelta: 0.005, longitudeDelta: 0.005 } : null)}
                             onRegionChangeComplete={(newReg) => {
+                                setMapRegion(newReg);
                                 if (isAdjustMode) {
                                     setCoords({ latitude: newReg.latitude, longitude: newReg.longitude });
                                 }
