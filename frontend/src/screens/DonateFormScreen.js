@@ -304,10 +304,10 @@ const DonateFormScreen = ({ navigation }) => {
             <StatusBar barStyle="dark-content" />
             <CustomToast visible={toastVisible} message={toastMessage} type={toastType} onHide={() => setToastVisible(false)} />
             
-            <KeyboardAvoidingView 
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
                 style={{ flex: 1 }}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
             >
                 <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                     <View style={{ flex: 1 }}>
@@ -319,7 +319,13 @@ const DonateFormScreen = ({ navigation }) => {
                             <View style={{ width: 44 }} />
                         </View>
 
-                        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+                        <ScrollView
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+                            keyboardShouldPersistTaps="handled"
+                            bounces={true}
+                            overScrollMode="always"
+                        >
                             <View style={[styles.section, { alignItems: 'center' }, errors.image && styles.errorBorderImage]}>
                             {imageUri ? (
                                 <View style={styles.imagePreviewWrapper}>
@@ -461,7 +467,7 @@ const DonateFormScreen = ({ navigation }) => {
                                         <Text style={styles.label}>Street / Locality / Area *</Text>
                                         <TextInput
                                             style={[styles.input, errors.street && styles.errorInput]}
-                                            placeholder="KITS College of Engineering, Gokul Shirgoan Area"
+                                            placeholder="KITS College of Engineering"
                                             placeholderTextColor="#94A3B8"
                                             value={street}
                                             onChangeText={(t) => { setStreet(t); if (errors.street) setErrors(e => ({ ...e, street: false })); }}

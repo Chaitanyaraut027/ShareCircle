@@ -1,7 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Linking, Image, Dimensions, RefreshControl, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  View, Text, StyleSheet, TextInput, TouchableOpacity,
+  FlatList, ActivityIndicator, Linking, Image, Dimensions,
+  RefreshControl, Platform, StatusBar, Animated,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import LeafletMap from '../components/LeafletMap';
 import * as Location from 'expo-location';
 import Slider from '@react-native-community/slider';
@@ -9,521 +13,582 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '../utils/constants';
 
-const CATEGORY_ICONS = {
-  'Food': { icon: 'hamburger', color: '#F39C12' },
-  'Clothes': { icon: 'child', color: '#2196F3' },
-  'Books & Stationery': { icon: 'book', color: '#F39C12' },
-  'Electronics': { icon: 'laptop', color: '#E74C3C' },
-  'Medical Supplies': { icon: 'medkit', color: '#4CAF50' },
-  'Other': { icon: 'box', color: '#4CAF50' }
+const { width: SW } = Dimensions.get('window');
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
+const CATEGORY_META = {
+  All:         { icon: 'apps',              color: '#6366F1' },
+  Food:        { icon: 'fast-food-outline', color: '#F97316' },
+  Clothes:     { icon: 'shirt-outline',     color: '#3B82F6' },
+  Books:       { icon: 'book-outline',      color: '#8B5CF6' },
+  Electronics: { icon: 'tv-outline',        color: '#10B981' },
+  Medical:     { icon: 'medical-outline',   color: '#EF4444' },
+  Toys:        { icon: 'extension-puzzle-outline', color: '#EC4899' },
+  Other:       { icon: 'grid-outline',      color: '#64748B' },
 };
 
-const getCategoryIconAndColor = (category) => {
-    return CATEGORY_ICONS[category] || CATEGORY_ICONS['Other'];
+const catColor = (c) => (CATEGORY_META[c] || CATEGORY_META.Other).color;
+const catIcon  = (c) => (CATEGORY_META[c] || CATEGORY_META.Other).icon;
+
+const haversine = (c1, c2) => {
+  if (!c1 || !c2) return null;
+  const getLat = c => c.latitude  ?? c.coordinates?.[1];
+  const getLng = c => c.longitude ?? c.coordinates?.[0];
+  const R = 6371, toR = x => x * Math.PI / 180;
+  const dLat = toR(getLat(c2) - getLat(c1));
+  const dLng = toR(getLng(c2) - getLng(c1));
+  const a = Math.sin(dLat/2)**2 + Math.cos(toR(getLat(c1)))*Math.cos(toR(getLat(c2)))*Math.sin(dLng/2)**2;
+  return (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))).toFixed(1);
 };
 
-const formatPhoneNumber = (phone, isWhatsApp = false) => {
-    if (!phone) return '';
-    let digits = phone.replace(/[^0-9]/g, '');
-    if (digits.length === 10) {
-        if (isWhatsApp) return `91${digits}`;
-        return `+91${digits}`;
+const fmt = (phone, wa=false) => {
+  if (!phone) return '';
+  const d = phone.replace(/\D/g,'');
+  if (d.length === 10) return wa ? `91${d}` : `+91${d}`;
+  return wa ? d : `+${d}`;
+};
+
+// ─── card ─────────────────────────────────────────────────────────────────────
+const DonationCard = ({ item, location, onNavigate, onCall, onWhatsApp, onPress }) => {
+  const dist = location && item.location?.coordinates
+    ? haversine(location, { latitude: item.location.coordinates[1], longitude: item.location.coordinates[0] })
+    : null;
+  const color = catColor(item.category);
+  const imgUri = item.image || item.imageUrl || null;
+
+  return (
+    <TouchableOpacity activeOpacity={0.93} style={card.wrapper} onPress={onPress}>
+      {/* Image */}
+      <View style={[card.imgBox, { borderColor: color + '30' }]}>
+        {imgUri
+          ? <Image source={{ uri: imgUri }} style={card.img} resizeMode="cover" />
+          : <View style={[card.imgFallback, { backgroundColor: color + '18' }]}>
+              <Ionicons name={catIcon(item.category)} size={30} color={color} />
+            </View>
+        }
+        {/* Category badge */}
+        <View style={[card.catBadge, { backgroundColor: color }]}>
+          <Ionicons name={catIcon(item.category)} size={10} color="#FFF" />
+          <Text style={card.catTxt}>{item.category}</Text>
+        </View>
+      </View>
+
+      {/* Info */}
+      <View style={card.info}>
+        <Text style={card.title} numberOfLines={2}>{item.title}</Text>
+
+        <View style={card.row}>
+          <Ionicons name="person-circle-outline" size={13} color="#94A3B8" />
+          <Text style={card.donor} numberOfLines={1}>
+            {' '}{item.donor?.fullName || 'Anonymous'}
+          </Text>
+        </View>
+
+        {item.address?.fullAddress || item.homeNo ? (
+          <View style={card.row}>
+            <Ionicons name="location-outline" size={12} color="#94A3B8" />
+            <Text style={card.addrTxt} numberOfLines={1}>
+              {' '}{item.address?.fullAddress || item.homeNo || ''}
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={card.bottomRow}>
+          {dist && (
+            <View style={[card.distChip, { backgroundColor: color + '15' }]}>
+              <Ionicons name="navigate-circle-outline" size={12} color={color} />
+              <Text style={[card.distTxt, { color }]}> {dist} km</Text>
+            </View>
+          )}
+          <View style={card.actions}>
+            <TouchableOpacity style={[card.btn, { backgroundColor: '#F0FDF4' }]} onPress={onCall}>
+              <Ionicons name="call-outline" size={16} color="#10B981" />
+            </TouchableOpacity>
+            <TouchableOpacity style={[card.btn, { backgroundColor: '#F0FDF4' }]} onPress={onWhatsApp}>
+              <MaterialCommunityIcons name="whatsapp" size={17} color="#25D366" />
+            </TouchableOpacity>
+            <TouchableOpacity style={[card.btn, { backgroundColor: '#EFF6FF' }]} onPress={onNavigate}>
+              <Ionicons name="navigate-outline" size={16} color="#3B82F6" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
+// ─── main screen ─────────────────────────────────────────────────────────────
+const CATEGORIES = ['All','Food','Clothes','Books','Electronics','Medical','Toys','Other'];
+
+export default function FindNearbyDonationsScreen({ navigation }) {
+  const [searchQuery, setSearchQuery]     = useState('');
+  const [radius, setRadius]               = useState(5);
+  const [donations, setDonations]         = useState([]);
+  const [location, setLocation]           = useState(null);
+  const [userId, setUserId]               = useState(null);
+  const [loading, setLoading]             = useState(true);
+  const [refreshing, setRefreshing]       = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedMarker, setSelectedMarker]     = useState(null);
+  const [mapType, setMapType]             = useState('standard');
+  const [mapCollapsed, setMapCollapsed]   = useState(false);
+  const mapHeight = useRef(new Animated.Value(240)).current;
+
+  // ── fetch ────────────────────────────────────────────────────────────────
+  const fetchDonations = useCallback(async (q, r, loc, uid = userId) => {
+    if (!loc) return;
+    try {
+      setLoading(true);
+      const { data } = await axios.get(`${API_URL}/dashboard/nearby`, {
+        params: { lat: loc.latitude, lng: loc.longitude, radius: r, query: q, type: 'donations', excludeUserId: uid },
+      });
+      if (data.success) {
+        setDonations([...data.data].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)));
+      }
+    } catch (e) {
+      console.error('fetch error', e);
+    } finally {
+      setLoading(false);
     }
-    if (isWhatsApp) return digits;
-    return phone.startsWith('+') ? phone.replace(/[^0-9+]/g, '') : `+${digits}`;
-};
+  }, [userId]);
 
-const haversineDistance = (coords1, coords2) => {
-    if (!coords1 || !coords2) return '0.0';
-    
-    const getLat = (c) => c.latitude !== undefined ? c.latitude : (c.coordinates ? c.coordinates[1] : c[1]);
-    const getLon = (c) => c.longitude !== undefined ? c.longitude : (c.coordinates ? c.coordinates[0] : c[0]);
-    
-    const lat1 = getLat(coords1);
-    const lon1 = getLon(coords1);
-    const lat2 = getLat(coords2);
-    const lon2 = getLon(coords2);
-
-    if (lat1 === undefined || lat2 === undefined) return '0.0';
-
-    function toRad(x) { return x * Math.PI / 180; }
-    const R = 6371; // km
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return (R * c).toFixed(1);
-};
-
-const FindNearbyDonationsScreen = ({ route, navigation }) => {
-    const type = 'donations';
-    const [searchQuery, setSearchQuery] = useState('');
-    const [radius, setRadius] = useState(5);
-    const [donations, setDonations] = useState([]);
-    const [location, setLocation] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [selectedMarker, setSelectedMarker] = useState(null);
-    const [routeCoords, setRouteCoords] = useState([]);
-    const [routeDistance, setRouteDistance] = useState(null);
-    const [mapType, setMapType] = useState('standard');
-    const [isFullScreen, setIsFullScreen] = useState(false);
-    const [selectedCategory, setSelectedCategory] = useState('All');
-    const [refreshing, setRefreshing] = useState(false);
-
-    const categories = ['All', 'Food', 'Clothes', 'Books', 'Furniture', 'Electronics', 'Other'];
-
-    const fetchDonations = useCallback(async (query, r, loc, uid = userId) => {
-        if (!loc) return;
-        try {
-            setLoading(true);
-            const { data } = await axios.get(`${API_URL}/dashboard/nearby`, {
-                params: {
-                    lat: loc.latitude,
-                    lng: loc.longitude,
-                    radius: r,
-                    query: query,
-                    type: type,
-                    excludeUserId: uid
-                }
-            });
-            if (data.success) {
-                // Sort by time: Older donations on top
-                const sortedData = [...data.data].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-                setDonations(sortedData);
-            }
-        } catch (error) {
-            console.error("Failed to fetch nearby donations", error);
-        } finally {
-            setLoading(false);
+  useEffect(() => {
+    (async () => {
+      let myLoc = null; let uid = null;
+      try {
+        const raw = await AsyncStorage.getItem('user');
+        if (raw) {
+          const u = JSON.parse(raw);
+          uid = u._id; setUserId(uid);
+          if (u.location?.coordinates?.length === 2) {
+            myLoc = { latitude: u.location.coordinates[1], longitude: u.location.coordinates[0] };
+          }
         }
-    }, [userId]);
-
-    useEffect(() => {
-        (async () => {
-            let myLoc = null;
-            let currentUserId = null;
-
-            try {
-                const userData = await AsyncStorage.getItem('user');
-                if (userData) {
-                    const currentUser = JSON.parse(userData);
-                    currentUserId = currentUser._id;
-                    setUserId(currentUserId);
-                    if (currentUser?.location?.coordinates && currentUser.location.coordinates.length === 2) {
-                        myLoc = {
-                            latitude: currentUser.location.coordinates[1],
-                            longitude: currentUser.location.coordinates[0]
-                        };
-                    }
-                }
-            } catch (e) {
-                console.error('AsyncStorage read error:', e);
-            }
-
-            if (!myLoc) {
-                let { status } = await Location.requestForegroundPermissionsAsync();
-                if (status === 'granted') {
-                    let loc = await Location.getCurrentPositionAsync({});
-                    myLoc = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-                }
-            }
-
-            if (myLoc) {
-                setLocation(myLoc);
-                fetchDonations(searchQuery, radius, myLoc, currentUserId);
-            } else {
-                alert('Could not determine location. Please update your profile.');
-            }
-        })();
-    }, []);
-
-    useEffect(() => {
-        if (!location) return;
-        const delayDebounceFn = setTimeout(() => {
-            fetchDonations(searchQuery, radius, location);
-        }, 500);
-        return () => clearTimeout(delayDebounceFn);
-    }, [searchQuery, location, radius]);
-
-    useEffect(() => {
-        if (selectedMarker && location && selectedMarker.location?.coordinates) {
-          const getRoute = async () => {
-             const start = location;
-             const end = { latitude: selectedMarker.location.coordinates[1], longitude: selectedMarker.location.coordinates[0] };
-             try {
-                 const response = await fetch(`http://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson`);
-                 const data = await response.json();
-                 
-                 if (data.routes && data.routes.length > 0) {
-                     const coords = data.routes[0].geometry.coordinates.map(c => ({
-                         latitude: c[1],
-                         longitude: c[0]
-                     }));
-                     setRouteCoords(coords);
-                     setRouteDistance((data.routes[0].distance / 1000).toFixed(1) + ' KM');
-                 } else {
-                     setRouteCoords([start, end]);
-                     setRouteDistance(haversineDistance(start, end) + ' KM');
-                 }
-             } catch(e) {
-                 console.error("Routing error:", e);
-                 setRouteCoords([start, end]);
-                 setRouteDistance(haversineDistance(start, end) + ' KM');
-             }
-          };
-          getRoute();
-        } else {
-          setRouteCoords([]);
-          setRouteDistance(null);
+      } catch (_) {}
+      if (!myLoc) {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const l = await Location.getCurrentPositionAsync({});
+          myLoc = { latitude: l.coords.latitude, longitude: l.coords.longitude };
         }
-      }, [selectedMarker, location]);
+      }
+      if (myLoc) { setLocation(myLoc); fetchDonations('', radius, myLoc, uid); }
+    })();
+  }, []);
 
-    const handleShowDonations = () => {
-        if (location) {
-            fetchDonations(searchQuery, radius, location);
-        }
-    };
+  useEffect(() => {
+    if (!location) return;
+    const t = setTimeout(() => fetchDonations(searchQuery, radius, location), 500);
+    return () => clearTimeout(t);
+  }, [searchQuery, radius, location]);
 
-    const openWhatsApp = async (phone, productTitle) => {
-        if(!phone) return;
-        let p = phone.replace(/[^0-9]/g, '');
-        
-        const userData = await AsyncStorage.getItem('user');
-        const currentUser = userData ? JSON.parse(userData) : null;
-        const userName = currentUser?.fullName || 'a ShareCircle user';
-        
-        const message = `*ShareCircle *\n\nHello, I hope you are doing well \n\nI am *${userName}*, and I am looking for *${productTitle}*. If you happen to have one available and are willing to donate or share, it would truly mean a lot to me.\n\nThank you so much for your kindness and support ❤️`;
-        const encodedMsg = encodeURIComponent(message);
-        
-        Linking.openURL(`https://wa.me/${p}?text=${encodedMsg}`).catch(e => alert("Could not open WhatsApp"));
-    };
+  // ── map collapse animation ────────────────────────────────────────────────
+  const toggleMap = () => {
+    Animated.timing(mapHeight, {
+      toValue: mapCollapsed ? 240 : 0,
+      duration: 280,
+      useNativeDriver: false,
+    }).start();
+    setMapCollapsed(v => !v);
+  };
 
-    const callPhone = (phone) => {
-        if(!phone) return;
-        Linking.openURL(`tel:${phone}`);
-    };
+  // ── actions ──────────────────────────────────────────────────────────────
+  const openWhatsApp = async (phone, title) => {
+    const raw = await AsyncStorage.getItem('user');
+    const me = raw ? JSON.parse(raw).fullName : 'a ShareCircle user';
+    const msg = `*ShareCircle*\n\nHello! I am *${me}* and I'm interested in *${title}*.\nCould you please share more details?\n\nThank you ❤️`;
+    Linking.openURL(`https://wa.me/${fmt(phone,true)}?text=${encodeURIComponent(msg)}`).catch(()=>{});
+  };
+  const callPhone = (p) => p && Linking.openURL(`tel:${fmt(p)}`);
+  const navigate  = (item) => {
+    const c = item.location?.coordinates;
+    if (c) Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${c[1]},${c[0]}`);
+  };
 
-    const renderItem = ({ item }) => {
-        let dist = 'Nearby';
-        if (location && item.location && item.location.coordinates) {
-            dist = haversineDistance(location, { latitude: item.location.coordinates[1], longitude: item.location.coordinates[0] }) + ' km';
-        }
-        
-        const { icon, color } = getCategoryIconAndColor(item.category);
+  // ── filtered list ────────────────────────────────────────────────────────
+  const filtered = selectedCategory === 'All'
+    ? donations
+    : donations.filter(d => d.category === selectedCategory);
 
-        const person = item.donor;
-        const imageUrl = item.image || item.imageUrl || 'https://via.placeholder.com/150';
-        return (
-            <View style={styles.donationCard}>
-                <TouchableOpacity 
-                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
-                    onPress={() => navigation.navigate('DonationDetail', { item, userLocation: location })}
-                >
-                    <Image source={{ uri: imageUrl }} style={{ width: 60, height: 60, borderRadius: 10, marginRight: 12, backgroundColor: '#E2E8F0' }} />
-                    <View style={styles.cardContent}>
-                        <Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text>
-                        <Text style={styles.donorInfo} numberOfLines={1}>{person?.fullName || 'Unknown User'} • {dist}</Text>
-                        {person?.mobileNumber && (
-                            <Text style={styles.phoneText}>
-                                <MaterialCommunityIcons name="phone" size={12} color="#64748B" /> {person.mobileNumber}
-                            </Text>
-                        )}
-                    </View>
-                </TouchableOpacity>
-                <View style={styles.actions}>
-                    <TouchableOpacity 
-                        style={styles.actionBtn} 
-                        onPress={() => {
-                            const num = formatPhoneNumber(person?.mobileNumber, false);
-                            callPhone(num);
-                        }}
-                    >
-                        <MaterialCommunityIcons name="phone" size={18} color="#10B981" />
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                        style={styles.actionBtnWhatsApp} 
-                        onPress={() => {
-                            const num = formatPhoneNumber(person?.mobileNumber, true);
-                            openWhatsApp(num, item.title);
-                        }}
-                    >
-                        <MaterialCommunityIcons name="whatsapp" size={18} color="#10B981" />
-                    </TouchableOpacity>
-                </View>
+  // ── render ────────────────────────────────────────────────────────────────
+  return (
+    <SafeAreaView style={s.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFF" />
+
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
+          <Ionicons name="arrow-back" size={22} color="#1E293B" />
+        </TouchableOpacity>
+        <Text style={s.headerTitle}>Nearby Donations</Text>
+        <TouchableOpacity style={s.mapToggle} onPress={toggleMap}>
+          <Ionicons name={mapCollapsed ? 'map-outline' : 'map'} size={20} color="#10B981" />
+          <Text style={s.mapToggleTxt}>{mapCollapsed ? 'Map' : 'Hide'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Search ─────────────────────────────────────────────────────────── */}
+      <View style={s.searchWrap}>
+        <View style={s.searchBox}>
+          <Ionicons name="search-outline" size={18} color="#94A3B8" />
+          <TextInput
+            style={s.searchInput}
+            placeholder="Search donations..."
+            placeholderTextColor="#94A3B8"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={18} color="#CBD5E1" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Radius row */}
+        <View style={s.radiusRow}>
+          <Text style={s.radiusLabel}>Radius</Text>
+          <View style={s.radiusSlider}>
+            <Slider
+              style={{ flex: 1 }}
+              minimumValue={1} maximumValue={50} step={1}
+              value={radius} onValueChange={setRadius}
+              minimumTrackTintColor="#10B981"
+              maximumTrackTintColor="#E2E8F0"
+              thumbTintColor="#10B981"
+            />
+          </View>
+          <View style={s.radiusBadge}>
+            <Text style={s.radiusBadgeTxt}>{radius} km</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* ── Map ────────────────────────────────────────────────────────────── */}
+      <Animated.View style={[s.mapCard, { height: mapHeight }]}>
+        {location ? (
+          <>
+            <LeafletMap
+              style={{ flex: 1 }}
+              latitude={location.latitude}
+              longitude={location.longitude}
+              zoom={Math.max(8, Math.round(14 - Math.log2(Math.max(1, radius))))}
+              markers={filtered}
+              radiusKm={radius}
+              satellite={mapType === 'satellite'}
+              onMarkerPress={(id) => {
+                const f = donations.find(it => String(it._id) === String(id));
+                if (f) setSelectedMarker(f);
+              }}
+            />
+            {/* Map controls */}
+            <View style={s.mapControls}>
+              <TouchableOpacity style={s.mapCtlBtn}
+                onPress={() => setMapType(t => t === 'standard' ? 'satellite' : 'standard')}>
+                <Ionicons name={mapType === 'standard' ? 'layers-outline' : 'map-outline'} size={20} color="#1E293B" />
+              </TouchableOpacity>
             </View>
-        );
-    };
-
-    return (
-        <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={{ paddingRight: 10 }}>
-                    <Ionicons name="arrow-back" size={24} color="#1E293B" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Find Nearby Donations</Text>
-                <View style={{ width: 24 }} />
-            </View>
-
-            <View style={styles.searchSection}>
-                <View style={styles.searchBar}>
-                    <Ionicons name="search" size={20} color="#94A3B8" />
-                    <TextInput 
-                        style={styles.searchInput}
-                        placeholder={`Search ${type}...`}
-                        value={searchQuery}
-                        onChangeText={setSearchQuery}
-                    />
-                    <Ionicons name="mic" size={20} color="#94A3B8" />
-                </View>
-
-                <View style={styles.radiusContainer}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={styles.radiusText}>Radius</Text>
-                        <Text style={styles.radiusValueText}>{radius} km</Text>
-                    </View>
-                    <Slider
-                        style={{width: '100%', height: 30}}
-                        minimumValue={1}
-                        maximumValue={50}
-                        step={1}
-                        value={radius}
-                        onValueChange={setRadius}
-                        minimumTrackTintColor="#10B981"
-                        maximumTrackTintColor="#E2E8F0"
-                        thumbTintColor="#10B981"
-                    />
-                </View>
-                
-                <TouchableOpacity style={styles.showbtn} onPress={handleShowDonations}>
-                    <Text style={styles.showbtnText}>Show Donations</Text>
-                </TouchableOpacity>
-            </View>
-
-            {/* Category Filter */}
-            <View style={{ backgroundColor: '#FFF', paddingBottom: 10 }}>
-                <FlatList 
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    data={categories}
-                    keyExtractor={(item) => item}
-                    contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 5 }}
-                    renderItem={({ item }) => (
-                        <TouchableOpacity 
-                            style={[
-                                styles.categoryBadge, 
-                                selectedCategory === item && styles.categoryBadgeActive
-                            ]}
-                            onPress={() => setSelectedCategory(item)}
-                        >
-                            <Text style={[
-                                styles.categoryBadgeText, 
-                                selectedCategory === item && styles.categoryBadgeTextActive
-                            ]}>{item}</Text>
-                        </TouchableOpacity>
-                    )}
+            {/* Selected marker popup */}
+            {selectedMarker && (
+              <View style={s.popup}>
+                <Image
+                  source={{ uri: selectedMarker.image || selectedMarker.imageUrl || 'https://via.placeholder.com/80' }}
+                  style={s.popupImg}
                 />
-            </View>
-            <View style={isFullScreen ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, backgroundColor: '#FAFAFA' } : styles.mapContainer}>
-                {location ? (
-                    <>
-                        <LeafletMap
-                            style={styles.map}
-                            latitude={location.latitude}
-                            longitude={location.longitude}
-                            zoom={Math.round(14 - Math.log2(radius))}
-                            markers={(selectedCategory === 'All' ? donations : donations.filter(d => d.category === selectedCategory))}
-                            radiusKm={radius}
-                            satellite={mapType === 'satellite'}
-                            onMarkerPress={(id) => {
-                              const found = donations.find(it => String(it._id) === String(id));
-                              if (found) setSelectedMarker(found);
-                            }}
-                        />
-
-                        <View style={mStyles.mapControls}>
-                            <TouchableOpacity 
-                                style={mStyles.controlBtn} 
-                                onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
-                            >
-                                <MaterialCommunityIcons name={mapType === 'standard' ? "layers-outline" : "map-outline"} size={22} color="#1E293B" />
-                            </TouchableOpacity>
-
-                            <TouchableOpacity 
-                                style={mStyles.controlBtn} 
-                                onPress={() => setIsFullScreen(!isFullScreen)}
-                            >
-                                <Ionicons name={isFullScreen ? "contract" : "expand"} size={22} color="#1E293B" />
-                            </TouchableOpacity>
-                        </View>
-
-                        {isFullScreen && (
-                            <TouchableOpacity 
-                                style={mStyles.backBtn}
-                                onPress={() => setIsFullScreen(false)}
-                            >
-                                <Ionicons name="arrow-back" size={24} color="#1E293B" />
-                            </TouchableOpacity>
-                        )}
-
-                        {selectedMarker && (
-                            <View style={styles.selectedOverlay}>
-                                <TouchableOpacity style={styles.closeOverlay} onPress={() => setSelectedMarker(null)}>
-                                    <Ionicons name="close-circle" size={28} color="#E74C3C" />
-                                </TouchableOpacity>
-                                
-                                <TouchableOpacity 
-                                    style={styles.overlayInner}
-                                    onPress={() => navigation.navigate('DonationDetail', { item: selectedMarker, userLocation: location })}
-                                >
-                                    <Image source={{ uri: selectedMarker.image || selectedMarker.imageUrl || 'https://via.placeholder.com/150' }} style={styles.overlayImage} />
-                                    
-                                    <View style={styles.overlayInfo}>
-                                        <Text style={styles.overlayUser} numberOfLines={1}>
-                                            {selectedMarker.donor?.fullName || 'Anonymous'}
-                                        </Text>
-                                        <Text style={styles.overlayTitle} numberOfLines={1}>{selectedMarker.title}</Text>
-                                        <Text style={styles.overlayDist}>
-                                            Distance: {routeDistance || haversineDistance(location, selectedMarker.location) + ' km'}
-                                        </Text>
-                                    </View>
-                                </TouchableOpacity>
-                                
-                                <View style={styles.overlayActions}>
-                                    <TouchableOpacity 
-                                        style={styles.overlayActionBtn}
-                                        onPress={() => {
-                                            if (selectedMarker.location && selectedMarker.location.coordinates) {
-                                                Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${selectedMarker.location.coordinates[1]},${selectedMarker.location.coordinates[0]}`);
-                                            }
-                                        }}
-                                    >
-                                        <Ionicons name="navigate" color="#FFF" size={16} />
-                                    </TouchableOpacity>
-                                    
-                                    <TouchableOpacity 
-                                        style={[styles.overlayActionBtn, { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0' }]}
-                                        onPress={() => {
-                                            const p = selectedMarker.donor?.mobileNumber || '';
-                                            const num = formatPhoneNumber(p, false);
-                                            callPhone(num);
-                                        }}
-                                    >
-                                        <Ionicons name="call" color="#2F7B5E" size={16} />
-                                    </TouchableOpacity>
-                                    
-                                    <TouchableOpacity 
-                                        style={[styles.overlayActionBtn, { backgroundColor: '#30D158' }]}
-                                        onPress={() => {
-                                            const p = selectedMarker.donor?.mobileNumber || '';
-                                            const num = formatPhoneNumber(p, true);
-                                            openWhatsApp(num, selectedMarker.title);
-                                        }}
-                                    >
-                                        <MaterialCommunityIcons name="whatsapp" color="#FFF" size={18} />
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        )}
-                    </>
-                ) : (
-                    <View style={styles.loadingMap}>
-                        <ActivityIndicator size="large" color="#10B981" />
-                        <Text style={{marginTop: 10}}>Finding your location...</Text>
-                    </View>
-                )}
-            </View>
-
-            <View style={{ flex: 1 }}>
-                <FlatList 
-                    data={selectedCategory === 'All' ? donations : donations.filter(d => d.category === selectedCategory)}
-                    keyExtractor={(item) => item._id}
-                    renderItem={renderItem}
-                    contentContainerStyle={styles.listContent}
-                    refreshControl={
-                        <RefreshControl 
-                            refreshing={refreshing}
-                            onRefresh={() => fetchDonations(searchQuery, radius, location)}
-                            colors={['#10B981']}
-                        />
-                    }
-                    ListEmptyComponent={
-                        loading && location ? <ActivityIndicator color="#10B981" style={{marginTop: 20}} /> : 
-                        <Text style={styles.emptyText}>{searchQuery ? `${type} not found` : `no ${type} found`}</Text>
-                    }
-                />
-            </View>
-
-            <View style={styles.footer}>
-                <TouchableOpacity style={styles.requestBtn} onPress={() => navigation.navigate('DonateForm')}>
-                    <Text style={styles.requestBtnText}>Donate Items</Text>
+                <View style={s.popupInfo}>
+                  <Text style={s.popupTitle} numberOfLines={1}>{selectedMarker.title}</Text>
+                  <Text style={s.popupDonor} numberOfLines={1}>{selectedMarker.donor?.fullName || 'Anonymous'}</Text>
+                  <Text style={s.popupDist}>
+                    {haversine(location, selectedMarker.location) ?? '--'} km away
+                  </Text>
+                </View>
+                <View style={s.popupActions}>
+                  <TouchableOpacity style={[s.popActBtn,{backgroundColor:'#10B981'}]}
+                    onPress={() => navigate(selectedMarker)}>
+                    <Ionicons name="navigate" size={15} color="#FFF" />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.popActBtn,{backgroundColor:'#25D366', marginTop:6}]}
+                    onPress={() => openWhatsApp(selectedMarker.donor?.mobileNumber, selectedMarker.title)}>
+                    <MaterialCommunityIcons name="whatsapp" size={16} color="#FFF" />
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity style={s.popupClose} onPress={() => setSelectedMarker(null)}>
+                  <Ionicons name="close-circle" size={22} color="#94A3B8" />
                 </TouchableOpacity>
-            </View>
-        </SafeAreaView>
-    );
-};
+              </View>
+            )}
+          </>
+        ) : (
+          <View style={s.mapLoading}>
+            <ActivityIndicator size="large" color="#10B981" />
+            <Text style={s.mapLoadingTxt}>Locating you…</Text>
+          </View>
+        )}
+      </Animated.View>
 
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#FAFAFA' },
-    categoryBadge: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F1F5F9', marginRight: 10, borderWidth: 1, borderColor: '#E2E8F0' },
-    categoryBadgeActive: { backgroundColor: '#10B981', borderColor: '#10B981' },
-    categoryBadgeText: { fontSize: 13, color: '#64748B', fontWeight: '600' },
-    categoryBadgeTextActive: { color: '#FFF' },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 10, backgroundColor: '#FFF' },
-    headerTitle: { fontSize: 17, fontWeight: '800', color: '#1E293B' },
-    searchSection: { backgroundColor: '#FFF', paddingHorizontal: 20, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-    searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 20, paddingHorizontal: 12, height: 40, marginBottom: 10, borderWidth: 1, borderColor: '#E2E8F0' },
-    searchInput: { flex: 1, marginLeft: 8, fontSize: 14, color: '#334155' },
-    radiusContainer: { marginBottom: 10 },
-    radiusText: { fontSize: 14, fontWeight: '700', color: '#1E293B' },
-    radiusValueText: { fontSize: 13, fontWeight: '700', color: '#10B981' },
-    showbtn: { backgroundColor: '#10B981', borderRadius: 20, height: 38, justifyContent: 'center', alignItems: 'center' },
-    showbtnText: { color: '#FFF', fontSize: 14, fontWeight: 'bold' },
-    mapContainer: { height: 260, backgroundColor: '#E2E8F0', overflow: 'hidden' },
-    map: { width: '100%', height: '100%' },
-    loadingMap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    userDotOuter: { width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(52, 152, 219, 0.3)', justifyContent: 'center', alignItems: 'center' },
-    userDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#3498DB', borderWidth: 2, borderColor: '#FFF' },
-    markerCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.3, shadowRadius: 3, elevation: 4 },
-    distanceBadge: { backgroundColor: '#1E293B', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, shadowColor: '#000', shadowOffset: {width:0, height:2}, shadowOpacity: 0.3, shadowRadius: 4, elevation: 4},
-    distanceBadgeText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
-    selectedOverlay: { position: 'absolute', bottom: 10, left: 10, right: 10, backgroundColor: '#FFF', borderRadius: 20, padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 10, elevation: 6, flexDirection: 'row', alignItems: 'center' },
-    closeOverlay: { position: 'absolute', top: -8, right: -8, zIndex: 20, backgroundColor: '#FFF', borderRadius: 14 },
-    overlayInner: { flex: 1, flexDirection: 'row', alignItems: 'center' },
-    overlayImage: { width: 70, height: 70, borderRadius: 12, marginRight: 12, backgroundColor: '#E2E8F0' },
-    overlayInfo: { flex: 1 },
-    overlayUser: { fontSize: 14, fontWeight: 'bold', color: '#1E293B', marginBottom: 2 },
-    overlayTitle: { fontSize: 13, color: '#334155', fontWeight: '600', marginBottom: 2 },
-    overlayDist: { fontSize: 11, color: '#64748B' },
-    overlayActions: { flexDirection: 'row', alignItems: 'center', marginLeft: 8 },
-    overlayActionBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#4B8BF5', justifyContent: 'center', alignItems: 'center', marginLeft: 6 },
-    listContent: { padding: 15, paddingBottom: 100 },
-    donationCard: { flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 16, padding: 12, marginBottom: 12, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
-    cardContent: { flex: 1 },
-    itemTitle: { fontSize: 15, fontWeight: 'bold', color: '#1E293B', marginBottom: 2 },
-    donorInfo: { fontSize: 12, color: '#64748B', marginBottom: 4 },
-    phoneText: { fontSize: 11, color: '#94A3B8', backgroundColor: '#F8FAFC', alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
-    actions: { flexDirection: 'row', marginLeft: 8 },
-    actionBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F0FDF4', justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
-    actionBtnWhatsApp: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F0FDF4', justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
-    emptyText: { textAlign: 'center', marginTop: 30, fontSize: 15, color: '#94A3B8' },
-    footer: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 15, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#F1F5F9' },
-    requestBtn: { backgroundColor: '#10B981', height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
-    requestBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' }
+      {/* ── Category filter ─────────────────────────────────────────────────── */}
+      <View style={s.filterWrap}>
+        <FlatList
+          horizontal showsHorizontalScrollIndicator={false}
+          data={CATEGORIES} keyExtractor={i => i}
+          contentContainerStyle={s.filterList}
+          renderItem={({ item }) => {
+            const active = selectedCategory === item;
+            const col = catColor(item);
+            return (
+              <TouchableOpacity
+                style={[s.chip, active && { backgroundColor: col, borderColor: col }]}
+                onPress={() => setSelectedCategory(item)}
+              >
+                <Ionicons name={catIcon(item)} size={13} color={active ? '#FFF' : col} />
+                <Text style={[s.chipTxt, active && { color: '#FFF' }]}>{item}</Text>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      </View>
+
+      {/* ── List ───────────────────────────────────────────────────────────── */}
+      <View style={s.listWrap}>
+        {/* Count bar */}
+        <View style={s.countBar}>
+          <Text style={s.countTxt}>
+            {loading ? 'Loading…' : `${filtered.length} donation${filtered.length !== 1 ? 's' : ''} found`}
+          </Text>
+          {!loading && filtered.length > 0 && (
+            <Text style={s.refreshHint}>Pull to refresh</Text>
+          )}
+        </View>
+
+        <FlatList
+          data={filtered}
+          keyExtractor={i => i._id}
+          contentContainerStyle={s.listContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={async () => {
+                setRefreshing(true);
+                await fetchDonations(searchQuery, radius, location);
+                setRefreshing(false);
+              }}
+              colors={['#10B981']}
+            />
+          }
+          ListEmptyComponent={
+            loading ? (
+              <View style={s.emptyWrap}>
+                <ActivityIndicator size="large" color="#10B981" />
+                <Text style={s.emptyTxt}>Finding nearby donations…</Text>
+              </View>
+            ) : (
+              <View style={s.emptyWrap}>
+                <View style={s.emptyIcon}>
+                  <Ionicons name="gift-outline" size={44} color="#CBD5E1" />
+                </View>
+                <Text style={s.emptyHead}>No donations found</Text>
+                <Text style={s.emptyTxt}>Try increasing the radius or changing the category filter.</Text>
+              </View>
+            )
+          }
+          renderItem={({ item }) => (
+            <DonationCard
+              item={item}
+              location={location}
+              onPress={() => navigation.navigate('DonationDetail', { item, userLocation: location })}
+              onCall={() => callPhone(item.donor?.mobileNumber)}
+              onWhatsApp={() => openWhatsApp(item.donor?.mobileNumber, item.title)}
+              onNavigate={() => navigate(item)}
+            />
+          )}
+        />
+      </View>
+
+      {/* ── Footer ─────────────────────────────────────────────────────────── */}
+      <View style={s.footer}>
+        <TouchableOpacity style={s.donateBtn} onPress={() => navigation.navigate('DonateForm')}>
+          <Ionicons name="gift-outline" size={20} color="#FFF" />
+          <Text style={s.donateBtnTxt}>Donate an Item</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+// ─── card styles ──────────────────────────────────────────────────────────────
+const card = StyleSheet.create({
+  wrapper: {
+    flexDirection: 'row',
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    marginBottom: 14,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  imgBox: {
+    width: 90, height: 90,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginRight: 12,
+    borderWidth: 1.5,
+  },
+  img: { width: '100%', height: '100%' },
+  imgFallback: {
+    width: '100%', height: '100%',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  catBadge: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 3, paddingHorizontal: 6,
+    justifyContent: 'center',
+  },
+  catTxt: { color: '#FFF', fontSize: 9, fontWeight: '800', marginLeft: 3 },
+  info: { flex: 1, justifyContent: 'space-between' },
+  title: { fontSize: 15, fontWeight: '800', color: '#1E293B', marginBottom: 4, lineHeight: 20 },
+  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
+  donor: { fontSize: 12, color: '#64748B', fontWeight: '600', flex: 1 },
+  addrTxt: { fontSize: 11, color: '#94A3B8', flex: 1 },
+  bottomRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
+  distChip: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
+  },
+  distTxt: { fontSize: 11, fontWeight: '700' },
+  actions: { flexDirection: 'row' },
+  btn: {
+    width: 32, height: 32, borderRadius: 10,
+    justifyContent: 'center', alignItems: 'center', marginLeft: 6,
+  },
 });
 
-const mStyles = StyleSheet.create({
-    userMarkerContainer: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-    userMarkerPulse: { position: 'absolute', width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(52, 152, 219, 0.3)', transform: [{ scale: 1.2 }] },
-    userMarkerDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#3498DB', borderWidth: 2, borderColor: '#FFF', shadowColor: '#3498DB', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 5 },
-    donationMarker: { alignItems: 'center' },
-    donationMarkerContent: { backgroundColor: '#F39C12', padding: 8, borderRadius: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5, elevation: 8, borderWidth: 2, borderColor: '#FFF' },
-    markerArrow: { width: 0, height: 0, backgroundColor: 'transparent', borderStyle: 'solid', borderLeftWidth: 6, borderRightWidth: 6, borderBottomWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: '#FFF', transform: [{ rotate: '180deg' }], marginTop: -2 },
-    mapControls: { position: 'absolute', right: 15, top: 15, zIndex: 10 },
-    controlBtn: { backgroundColor: '#FFF', width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
-    backBtn: { position: 'absolute', left: 15, top: 40, zIndex: 10, backgroundColor: '#FFF', width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
-});
+// ─── screen styles ────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#F8FAFC' },
 
-export default FindNearbyDonationsScreen;
+  // Header
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#FFF',
+    borderBottomWidth: 1, borderBottomColor: '#F1F5F9',
+  },
+  backBtn: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center',
+  },
+  headerTitle: { fontSize: 18, fontWeight: '900', color: '#1E293B' },
+  mapToggle: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#F0FDF4', paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 12, borderWidth: 1, borderColor: '#D1FAE5',
+  },
+  mapToggleTxt: { fontSize: 12, fontWeight: '800', color: '#10B981', marginLeft: 4 },
+
+  // Search
+  searchWrap: { backgroundColor: '#FFF', paddingHorizontal: 16, paddingBottom: 12, paddingTop: 10 },
+  searchBox: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#F8FAFC', borderRadius: 14,
+    paddingHorizontal: 12, height: 44,
+    borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 10,
+  },
+  searchInput: { flex: 1, marginHorizontal: 8, fontSize: 14, color: '#334155' },
+  radiusRow: { flexDirection: 'row', alignItems: 'center' },
+  radiusLabel: { fontSize: 13, fontWeight: '700', color: '#334155', width: 48 },
+  radiusSlider: { flex: 1, marginHorizontal: 6 },
+  radiusBadge: {
+    backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10,
+    borderWidth: 1, borderColor: '#D1FAE5',
+  },
+  radiusBadgeTxt: { fontSize: 12, fontWeight: '800', color: '#10B981' },
+
+  // Map
+  mapCard: {
+    marginHorizontal: 14, marginBottom: 8,
+    borderRadius: 20, overflow: 'hidden',
+    backgroundColor: '#E8F0E9',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1, shadowRadius: 12, elevation: 5,
+  },
+  mapControls: { position: 'absolute', top: 12, right: 12, zIndex: 10 },
+  mapCtlBtn: {
+    width: 40, height: 40, borderRadius: 12, backgroundColor: '#FFF',
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12, shadowRadius: 6, elevation: 4,
+  },
+  mapLoading: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 10 },
+  mapLoadingTxt: { fontSize: 13, color: '#64748B' },
+
+  // Popup
+  popup: {
+    position: 'absolute', bottom: 10, left: 10, right: 10,
+    backgroundColor: '#FFF', borderRadius: 18, padding: 10,
+    flexDirection: 'row', alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15, shadowRadius: 12, elevation: 8,
+  },
+  popupImg: { width: 58, height: 58, borderRadius: 12, marginRight: 10, backgroundColor: '#F1F5F9' },
+  popupInfo: { flex: 1 },
+  popupTitle: { fontSize: 14, fontWeight: '800', color: '#1E293B' },
+  popupDonor: { fontSize: 12, color: '#64748B', marginVertical: 1 },
+  popupDist: { fontSize: 11, color: '#10B981', fontWeight: '700' },
+  popupActions: { marginLeft: 8 },
+  popActBtn: {
+    width: 34, height: 34, borderRadius: 10,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  popupClose: { position: 'absolute', top: -8, right: -8, backgroundColor: '#FFF', borderRadius: 12 },
+
+  // Category filter
+  filterWrap: { backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  filterList: { paddingHorizontal: 14, paddingVertical: 8 },
+  chip: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 20, marginRight: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5, borderColor: '#E2E8F0',
+  },
+  chipTxt: { fontSize: 12, fontWeight: '700', color: '#64748B', marginLeft: 4 },
+
+  // List
+  listWrap: { flex: 1 },
+  countBar: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 8,
+  },
+  countTxt: { fontSize: 13, fontWeight: '700', color: '#64748B' },
+  refreshHint: { fontSize: 11, color: '#CBD5E1' },
+  listContent: { paddingHorizontal: 14, paddingTop: 4, paddingBottom: 120 },
+
+  // Empty
+  emptyWrap: { alignItems: 'center', paddingTop: 50, paddingHorizontal: 30 },
+  emptyIcon: {
+    width: 90, height: 90, borderRadius: 45,
+    backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginBottom: 20,
+  },
+  emptyHead: { fontSize: 18, fontWeight: '900', color: '#334155', marginBottom: 8 },
+  emptyTxt: { fontSize: 13, color: '#94A3B8', textAlign: 'center', lineHeight: 20 },
+
+  // Footer
+  footer: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: '#FFF', paddingHorizontal: 16, paddingVertical: 12,
+    borderTopWidth: 1, borderTopColor: '#F1F5F9',
+  },
+  donateBtn: {
+    backgroundColor: '#10B981', height: 50, borderRadius: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#10B981', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35, shadowRadius: 10, elevation: 6,
+  },
+  donateBtnTxt: { color: '#FFF', fontSize: 16, fontWeight: '900', marginLeft: 8 },
+});
