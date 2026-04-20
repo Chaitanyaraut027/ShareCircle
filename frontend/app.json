@@ -24,7 +24,12 @@
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyB5N7pKq3JVCr4pQm6nTN_placeholder_key"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"

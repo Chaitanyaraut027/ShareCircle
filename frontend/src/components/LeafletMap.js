@@ -1,23 +1,20 @@
 import React, { useMemo, useRef, useCallback } from 'react';
-import { View } from 'react-native';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 
-const CARTO_VOYAGER = 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
-const CARTO_SATELLITE = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-
 /**
- * Leaflet-based map via WebView — no Google Maps API key required.
+ * Free map component using WebView + Leaflet.js.
+ * No Google Maps API key required. Works in both Expo Go and standalone APK.
  *
  * Props:
- *  - latitude, longitude  : center of map (required)
- *  - zoom                 : initial zoom level (default 13)
- *  - markers              : array of donation objects with location.coordinates[lng, lat]
- *  - radiusKm             : draw a radius circle around user (km), 0 = disabled
- *  - draggable            : if true, show a draggable pin (location picker mode)
- *  - satellite            : if true, use satellite imagery tiles
- *  - onMarkerPress        : (id: string) => void — called when a donation marker is tapped
- *  - onCoordChange        : ({latitude, longitude}) => void — called when draggable pin moves
- *  - style                : View style
+ *  latitude, longitude - center coords (required)
+ *  zoom               - initial zoom (default 13)
+ *  markers            - array of donation objects {_id, location.coordinates[lng,lat], title, donor}
+ *  radiusKm           - draw radius circle in km (0 = disabled)
+ *  draggable          - if true, show draggable green pin for location picking
+ *  satellite          - if true, show satellite imagery instead of street map
+ *  onMarkerPress      - (id: string) => void
+ *  onCoordChange      - ({latitude, longitude}) => void  — pin moved/tapped
  */
 export default function LeafletMap({
   latitude,
@@ -34,10 +31,13 @@ export default function LeafletMap({
   const wvRef = useRef(null);
 
   const html = useMemo(() => {
-    if (!latitude || !longitude) return '<html><body style="background:#E2F0E8"></body></html>';
+    if (!latitude || !longitude) return '<html><body style="background:#e8f0ec;"></body></html>';
 
-    const tileUrl = satellite ? CARTO_SATELLITE : CARTO_VOYAGER;
-    const tileAttr = satellite ? '&copy; ESRI' : '&copy; CartoDB';
+    // Tiles — Voyager for street, ESRI for satellite
+    const tileUrl = satellite
+      ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+      : 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
+    const tileAttr = satellite ? '&copy; ESRI' : '&copy; CARTO';
 
     const markerJson = JSON.stringify(
       markers
@@ -49,109 +49,176 @@ export default function LeafletMap({
             id: String(m._id || m.id || ''),
             lat,
             lng,
-            title: (m.title || '').replace(/'/g, "\\'"),
-            donor: ((m.donor?.fullName) || 'Unknown').replace(/'/g, "\\'"),
+            title: String(m.title || '').replace(/\\/g, '').replace(/"/g, "'"),
+            donor: String(m.donor?.fullName || 'Unknown').replace(/\\/g, '').replace(/"/g, "'"),
           };
         })
         .filter(Boolean)
     );
 
-    const radiusCircle =
-      radiusKm > 0
-        ? `L.circle([${latitude},${longitude}],{
-            radius:${radiusKm * 1000},
-            color:'#2F7B5E',fillColor:'#2F7B5E',
-            fillOpacity:0.07,weight:1.5
-          }).addTo(map);`
-        : '';
-
-    const draggablePin = draggable
-      ? `
-        var pIcon=L.divIcon({
-          className:'',
-          html:'<div style="width:36px;height:36px;background:#2F7B5E;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,.3)"><span style="transform:rotate(45deg);font-size:18px">📍</span></div>',
-          iconSize:[36,36],iconAnchor:[18,36]
-        });
-        var pp=L.marker([${latitude},${longitude}],{icon:pIcon,draggable:true}).addTo(map);
-        function emitCoord(lt,ln){
-          window.ReactNativeWebView.postMessage(JSON.stringify({t:'cc',lat:lt,lng:ln}));
-        }
-        pp.on('dragend',function(e){var p=e.target.getLatLng();emitCoord(p.lat,p.lng);});
-        map.on('click',function(e){pp.setLatLng(e.latlng);emitCoord(e.latlng.lat,e.latlng.lng);});
-      `
-      : '';
-
     return `<!DOCTYPE html>
-<html><head>
+<html>
+<head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WLs=" crossorigin=""></script>
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; img-src * data: blob:; connect-src *;">
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
   <style>
-    *{margin:0;padding:0;box-sizing:border-box}
-    html,body{width:100%;height:100%;overflow:hidden;background:#e8f0ec}
-    #m{width:100%;height:100%}
-    .leaflet-control-attribution{font-size:8px!important;opacity:.55;background:rgba(255,255,255,.7)!important}
-    .leaflet-control-zoom{display:none}
-    .u-dot{
-      width:12px;height:12px;
-      background:#2F7B5E;border-radius:50%;
-      border:2.5px solid #fff;
-      box-shadow:0 0 0 5px rgba(47,123,94,.2),0 0 0 10px rgba(47,123,94,.1);
-      animation:pu 2s ease-in-out infinite;
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; overflow:hidden; background:#e8efeb; }
+    #map { width:100vw; height:100vh; }
+    .leaflet-control-zoom { display:none; }
+    .leaflet-control-attribution {
+      font-size:8px !important; opacity:0.6;
+      background:rgba(255,255,255,0.75) !important;
     }
-    @keyframes pu{0%,100%{box-shadow:0 0 0 5px rgba(47,123,94,.2),0 0 0 10px rgba(47,123,94,.1)}
-      50%{box-shadow:0 0 0 8px rgba(47,123,94,.15),0 0 0 16px rgba(47,123,94,.05)}}
-    .gift-wrap{
-      width:36px;height:36px;
-      background:linear-gradient(135deg,#F39C12,#e08b0a);
+    /* Pulsing user dot */
+    .user-dot {
+      width:14px; height:14px;
+      background:#2F7B5E; border-radius:50%;
+      border:2.5px solid white;
+      box-shadow:0 0 0 0 rgba(47,123,94,0.4);
+      animation:pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%   { box-shadow:0 0 0 0   rgba(47,123,94,0.4); }
+      70%  { box-shadow:0 0 0 12px rgba(47,123,94,0);   }
+      100% { box-shadow:0 0 0 0   rgba(47,123,94,0);    }
+    }
+    /* Gift marker */
+    .gift-pin {
+      width:36px; height:42px; position:relative;
+    }
+    .gift-bubble {
+      width:36px; height:36px;
+      background:linear-gradient(135deg,#F39C12,#d4880a);
       border-radius:50% 50% 50% 0;
       transform:rotate(-45deg);
-      display:flex;align-items:center;justify-content:center;
-      box-shadow:0 3px 12px rgba(0,0,0,.3);
+      display:flex; align-items:center; justify-content:center;
+      box-shadow:0 4px 12px rgba(0,0,0,0.3);
       cursor:pointer;
-      transition:transform .15s;
     }
-    .gift-inner{transform:rotate(45deg);font-size:16px;line-height:1}
+    .gift-emoji { transform:rotate(45deg); font-size:16px; line-height:1; }
+    /* Draggable pin */
+    .drag-pin {
+      width:32px; height:38px; position:relative; cursor:grab;
+    }
+    .drag-bubble {
+      width:32px; height:32px;
+      background:linear-gradient(135deg,#2F7B5E,#1d5c46);
+      border-radius:50% 50% 50% 0;
+      transform:rotate(-45deg);
+      display:flex; align-items:center; justify-content:center;
+      box-shadow:0 4px 12px rgba(0,0,0,0.3);
+    }
+    .drag-emoji { transform:rotate(45deg); font-size:15px; }
+    /* Selected popup */
+    .leaflet-popup-content-wrapper {
+      border-radius:12px !important;
+      box-shadow:0 8px 24px rgba(0,0,0,0.2) !important;
+    }
+    .leaflet-popup-content { margin:10px 14px !important; font-size:13px; }
   </style>
 </head>
-<body><div id="m"></div>
+<body>
+<div id="map"></div>
 <script>
-  var map=L.map('m',{zoomControl:false,attributionControl:true,tap:false})
-           .setView([${latitude},${longitude}],${zoom});
+(function() {
+  'use strict';
 
-  L.tileLayer('${tileUrl}',{maxZoom:19,attribution:'${tileAttr}'}).addTo(map);
+  var lat = ${latitude};
+  var lng = ${longitude};
+  var z   = ${zoom};
 
-  /* User location dot */
-  var uIcon=L.divIcon({className:'',html:'<div class="u-dot"></div>',iconSize:[12,12],iconAnchor:[6,6]});
-  L.marker([${latitude},${longitude}],{icon:uIcon,interactive:false,zIndexOffset:2000}).addTo(map);
+  var map = L.map('map', {
+    zoomControl: false,
+    attributionControl: true,
+    tap: false,
+    fadeAnimation: true,
+    zoomAnimation: true
+  }).setView([lat, lng], z);
 
-  /* Radius circle */
-  ${radiusCircle}
+  /* ── Tile layer ── */
+  L.tileLayer('${tileUrl}', {
+    maxZoom: 19,
+    subdomains: ['a','b','c'],
+    attribution: '${tileAttr}',
+    crossOrigin: true
+  }).addTo(map);
 
-  /* Donation markers */
-  var donors=${markerJson};
-  donors.forEach(function(d){
-    var ic=L.divIcon({
-      className:'',
-      html:'<div class="gift-wrap"><div class="gift-inner">🎁</div></div>',
-      iconSize:[36,36],iconAnchor:[18,36],popupAnchor:[0,-36]
+  /* ── User location dot ── */
+  var uIcon = L.divIcon({
+    className: '',
+    html: '<div class="user-dot"></div>',
+    iconSize: [14,14],
+    iconAnchor: [7,7]
+  });
+  L.marker([lat, lng], { icon: uIcon, interactive: false, zIndexOffset: 2000 }).addTo(map);
+
+  /* ── Radius circle ── */
+  ${radiusKm > 0 ? `
+  L.circle([lat, lng], {
+    radius: ${radiusKm * 1000},
+    color: '#2F7B5E', fillColor: '#2F7B5E',
+    fillOpacity: 0.07, weight: 1.5
+  }).addTo(map);` : ''}
+
+  /* ── Donation markers ── */
+  var donors = ${markerJson};
+  donors.forEach(function(d) {
+    if (isNaN(d.lat) || isNaN(d.lng)) return;
+    var icon = L.divIcon({
+      className: '',
+      html: '<div class="gift-pin"><div class="gift-bubble"><span class="gift-emoji">🎁</span></div></div>',
+      iconSize: [36,42],
+      iconAnchor: [18,42],
+      popupAnchor: [0,-44]
     });
-    var mrk=L.marker([d.lat,d.lng],{icon:ic}).addTo(map);
-    mrk.on('click',function(){
-      window.ReactNativeWebView.postMessage(JSON.stringify({t:'mp',id:d.id}));
+    var mrk = L.marker([d.lat, d.lng], { icon: icon }).addTo(map);
+    mrk.bindPopup('<b>' + d.title + '</b><br><small>' + d.donor + '</small>');
+    mrk.on('click', function() {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ t: 'mp', id: d.id }));
     });
   });
 
-  /* Draggable picker */
-  ${draggablePin}
+  /* ── Draggable picker ── */
+  ${draggable ? `
+  var pIcon = L.divIcon({
+    className: '',
+    html: '<div class="drag-pin"><div class="drag-bubble"><span class="drag-emoji">📍</span></div></div>',
+    iconSize: [32,38],
+    iconAnchor: [16,38]
+  });
+  var pp = L.marker([lat, lng], { icon: pIcon, draggable: true }).addTo(map);
 
-  /* Fix sizing after render */
-  setTimeout(function(){map.invalidateSize();},250);
+  function emit(lt, ln) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ t: 'cc', lat: lt, lng: ln }));
+  }
+  pp.on('dragend', function(e) {
+    var p = e.target.getLatLng();
+    emit(p.lat, p.lng);
+  });
+  map.on('click', function(e) {
+    pp.setLatLng(e.latlng);
+    emit(e.latlng.lat, e.latlng.lng);
+  });
+  ` : ''}
+
+  /* ── Fix sizing after WebView renders ── */
+  function invalidate() { map.invalidateSize(true); }
+  window.addEventListener('load', invalidate);
+  setTimeout(invalidate, 300);
+  setTimeout(invalidate, 800);
+  setTimeout(invalidate, 1500);
+})();
 </script>
-</body></html>`;
+</body>
+</html>`;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latitude, longitude, zoom, satellite, radiusKm, draggable, JSON.stringify(markers)]);
 
   const onMessage = useCallback(
@@ -166,21 +233,56 @@ export default function LeafletMap({
   );
 
   if (!latitude || !longitude) {
-    return <View style={[{ flex: 1, backgroundColor: '#E2F0E8' }, style]} />;
+    return <View style={[styles.placeholder, style]} />;
   }
 
   return (
     <WebView
       ref={wvRef}
-      source={{ html }}
+      key={`${latitude},${longitude},${zoom},${satellite},${radiusKm},${draggable}`}
+      source={{ html, baseUrl: 'https://localhost' }}
       style={[{ flex: 1 }, style]}
-      scrollEnabled={false}
+
+      // JavaScript & storage
       javaScriptEnabled
       domStorageEnabled
+
+      // Allow all origins (needed for CDN tile requests)
       originWhitelist={['*']}
+      allowsInlineMediaPlayback={false}
+      allowUniversalAccessFromFileURLs
+      allowFileAccess
+
+      // Android-specific
       mixedContentMode="always"
+      androidLayerType="hardware"
+      cacheEnabled={false}
+      incognito={false}
+
+      // Message bridge
       onMessage={onMessage}
-      startInLoadingState={false}
+
+      // Show loading state while Leaflet initialises
+      renderLoading={() => (
+        <View style={styles.loader}>
+          <ActivityIndicator size="large" color="#2F7B5E" />
+        </View>
+      )}
+      startInLoadingState
     />
   );
 }
+
+const styles = StyleSheet.create({
+  placeholder: {
+    flex: 1,
+    backgroundColor: '#E2F0E8',
+  },
+  loader: {
+    position: 'absolute',
+    inset: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#E2F0E8',
+  },
+});
