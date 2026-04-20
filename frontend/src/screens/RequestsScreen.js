@@ -11,14 +11,19 @@ import {
   Linking,
   Alert,
   TextInput,
-  Dimensions
+  Dimensions,
+  TouchableWithoutFeedback,
+  Keyboard
 } from 'react-native';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { API_URL } from '../utils/constants';
+import CustomToast from '../components/CustomToast';
+
 
 const { width } = Dimensions.get('window');
 
@@ -31,6 +36,18 @@ const RequestsScreen = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'pending', 'accepted'
   const [user, setUser] = useState(null);
+
+  // Toast setup
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('success');
+
+  const showToast = (msg, type = 'success') => {
+    setToastMessage(msg);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
 
   const fetchData = useCallback(async () => {
     try {
@@ -104,11 +121,11 @@ const RequestsScreen = () => {
             try {
               const res = await axios.post(`${API_URL}/donations/${donationId}/accept`, { requesterId });
               if (res.data.success) {
-                Alert.alert("Success", "Request accepted!");
+                showToast("Request accepted! ✅");
                 fetchData();
               }
             } catch (error) {
-              Alert.alert("Error", "Failed to accept request.");
+              showToast("Failed to accept request.", "error");
             }
           }
         }
@@ -250,49 +267,54 @@ const RequestsScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <CustomToast visible={toastVisible} message={toastMessage} type={toastType} onHide={() => setToastVisible(false)} />
       {/* Search & Tabs Header */}
-      <View style={styles.topHeader}>
-        <Text style={styles.mainTitle}>Requests Tracker</Text>
-        
-        <View style={styles.searchBox}>
-          <Feather name="search" size={18} color="#94A3B8" style={{marginLeft: 12}} />
-          <TextInput 
-            style={styles.searchInput}
-            placeholder="Search items..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
 
-        <View style={styles.tabBar}>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'received' && styles.activeTab]}
-            onPress={() => setActiveTab('received')}
-          >
-            <Text style={[styles.tabText, activeTab === 'received' && styles.activeTabText]}>Received</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'sent' && styles.activeTab]}
-            onPress={() => setActiveTab('sent')}
-          >
-            <Text style={[styles.tabText, activeTab === 'sent' && styles.activeTabText]}>Sent</Text>
-          </TouchableOpacity>
-        </View>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={styles.topHeader}>
+          <Text style={styles.mainTitle}>Requests Tracker</Text>
+          
+          <View style={styles.searchBox}>
+            <Feather name="search" size={18} color="#94A3B8" style={{marginLeft: 12}} />
+            <TextInput 
+              style={styles.searchInput}
+              placeholder="Search items..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+          </View>
 
-        <View style={styles.filterBar}>
-          {['all', 'pending', 'accepted'].map(f => (
+          <View style={styles.tabBar}>
             <TouchableOpacity 
-              key={f}
-              style={[styles.filterPill, statusFilter === f && styles.activeFilterPill]}
-              onPress={() => setStatusFilter(f)}
+              style={[styles.tab, activeTab === 'received' && styles.activeTab]}
+              onPress={() => setActiveTab('received')}
             >
-              <Text style={[styles.filterText, statusFilter === f && styles.activeFilterText]}>
-                {f.charAt(0).toUpperCase() + f.slice(1)}
-              </Text>
+              <Text style={[styles.tabText, activeTab === 'received' && styles.activeTabText]}>Received</Text>
             </TouchableOpacity>
-          ))}
+            <TouchableOpacity 
+              style={[styles.tab, activeTab === 'sent' && styles.activeTab]}
+              onPress={() => setActiveTab('sent')}
+            >
+              <Text style={[styles.tabText, activeTab === 'sent' && styles.activeTabText]}>Sent</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.filterBar}>
+            {['all', 'pending', 'accepted'].map(f => (
+              <TouchableOpacity 
+                key={f}
+                style={[styles.filterPill, statusFilter === f && styles.activeFilterPill]}
+                onPress={() => setStatusFilter(f)}
+              >
+                <Text style={[styles.filterText, statusFilter === f && styles.activeFilterText]}>
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
-      </View>
+      </TouchableWithoutFeedback>
+
 
       {loading && !refreshing ? (
         <View style={styles.centered}>

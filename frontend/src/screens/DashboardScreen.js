@@ -18,8 +18,11 @@ import {
   Platform,
   Linking,
   TextInput,
-  Alert
+  Alert,
+  RefreshControl
 } from 'react-native';
+import CustomToast from '../components/CustomToast';
+
 import { 
   MaterialCommunityIcons, 
   Feather, 
@@ -72,6 +75,21 @@ const DashboardScreen = ({ navigation }) => {
   const [historyStats, setHistoryStats] = useState({ donations: 0, points: 0 });
   const [unreadCount, setUnreadCount] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [mapType, setMapType] = useState('standard');
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const categories = ['All', 'Food', 'Clothes', 'Books & Stationery', 'Electronics', 'Medical Supplies', 'Other'];
+
+  // Toast setup
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('success');
+
+  const showToast = (msg, type = 'success') => {
+    setToastMessage(msg);
+    setToastType(type);
+    setToastVisible(true);
+  };
 
   useEffect(() => {
     if (selectedMarker && location && selectedMarker.location?.coordinates) {
@@ -123,8 +141,15 @@ const DashboardScreen = ({ navigation }) => {
           let currentUser = null;
           
           if (userData) {
-            currentUser = JSON.parse(userData);
-            setUser(currentUser);
+            try {
+                currentUser = JSON.parse(userData);
+                setUser(currentUser);
+            } catch (e) {
+                console.error("User parsing error", e);
+                await AsyncStorage.clear();
+                navigation.replace('Welcome');
+                return;
+            }
             try {
                const hRes = await getUserHistory(currentUser._id);
                if (hRes && hRes.success && hRes.data?.donated) {
@@ -167,7 +192,9 @@ const DashboardScreen = ({ navigation }) => {
           if (activeLocation) {
               const res = await getNearbyItems(activeLocation.longitude, activeLocation.latitude, 'donations', activeRadius, currentUser?._id);
               if (res && res.success) {
-                  setNearbyItems(res.data);
+                  // Sort by time: Older donations on top
+                  const sortedData = [...res.data].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+                  setNearbyItems(sortedData);
               }
           }
 
@@ -220,7 +247,9 @@ const DashboardScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
+      <CustomToast visible={toastVisible} message={toastMessage} type={toastType} onHide={() => setToastVisible(false)} />
       <View style={{height: Platform.OS === 'ios' ? 50 : 30}} />
+
       
       {/* Sidebar Overlay */}
       {isSidebarOpen && (
@@ -263,6 +292,12 @@ const DashboardScreen = ({ navigation }) => {
                 <Text style={styles.sidebarLabel}>Requests</Text>
               </TouchableOpacity>
 
+              <TouchableOpacity style={styles.sidebarItem} onPress={() => { setIsSidebarOpen(false); navigation.navigate('History'); }}>
+                <View style={[styles.sidebarIconBox, {backgroundColor: '#F5F3FF'}]}>
+                  <MaterialCommunityIcons name="history" color="#7C3AED" size={22} />
+                </View>
+                <Text style={styles.sidebarLabel}>History</Text>
+              </TouchableOpacity>
               <TouchableOpacity style={styles.sidebarItem} onPress={() => { setIsSidebarOpen(false); navigation.navigate('Requests'); }}>
                 <View style={[styles.sidebarIconBox, {backgroundColor: '#FFF7ED'}]}>
                   <Ionicons name="notifications" color="#F39C12" size={22} />
@@ -310,7 +345,21 @@ const DashboardScreen = ({ navigation }) => {
         </View>
       )}
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false} 
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+            <RefreshControl 
+                refreshing={false} // You can connect a refreshing state if needed
+                onRefresh={() => {
+                    // Trigger data refresh logic
+                    navigation.replace('MainTabs'); 
+                }} 
+                colors={['#2F7B5E']}
+                tintColor="#2F7B5E"
+            />
+        }
+      >
         
         {/* Header */}
         <View style={styles.header}>
@@ -396,64 +445,103 @@ const DashboardScreen = ({ navigation }) => {
            <Text style={{fontSize: 12, color: '#94A3B8', marginLeft: 5}}>100km</Text>
         </View>
 
-        {/* Map Section */}
-        <View style={{ height: 320, borderRadius: 24, overflow: 'hidden', marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 }}>
+                <View style={isFullScreen ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, backgroundColor: '#FFF' } : { height: 320, borderRadius: 24, overflow: 'hidden', marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 }}>
               {location ? (
-                <MapView
-                  style={{ width: '100%', height: '100%' }}
-                  initialRegion={location}
-                  onPress={() => setSelectedMarker(null)}
-                >
-                  <Marker coordinate={{ latitude: location.latitude, longitude: location.longitude }}>
-                      <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(52, 152, 219, 0.4)', justifyContent: 'center', alignItems: 'center' }}>
-                         <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#3498DB', borderWidth: 2, borderColor: '#FFF' }} />
-                      </View>
-                  </Marker>
-                  <Circle
-                      center={{ latitude: location.latitude, longitude: location.longitude }}
-                      radius={activeRadius * 1000}
-                      fillColor="rgba(47, 123, 94, 0.15)"
-                      strokeColor="rgba(47, 123, 94, 0.5)"
-                      strokeWidth={2}
-                  />
-                  {nearbyItems.map(item => {
-                      if (!item.location || !item.location.coordinates) return null;
-                      const creator = item.donor;
-                      const distStr = calculateDistance(location, item.location);
-                      const minutesAgo = Math.max(0, Math.floor((new Date() - new Date(item.createdAt)) / 60000));
-                      let timeStr = `${minutesAgo} mins ago`;
-                      if (minutesAgo > 60) timeStr = `${Math.floor(minutesAgo/60)} hrs ago`;
-                      if (minutesAgo > 1440) timeStr = `${Math.floor(minutesAgo/1440)} days ago`;
+                <View style={{ flex: 1 }}>
+                  <MapView
+                    style={{ width: '100%', height: '100%' }}
+                    initialRegion={location}
+                    mapType={mapType}
+                    onPress={() => setSelectedMarker(null)}
+                    zoomEnabled={true}
+                    scrollEnabled={true}
+                    pitchEnabled={true}
+                    rotateEnabled={true}
+                  >
+                    {/* Pulsing User Marker */}
+                    <Marker coordinate={{ latitude: location.latitude, longitude: location.longitude }}>
+                        <View style={mStyles.userMarkerContainer}>
+                            <View style={mStyles.userMarkerPulse} />
+                            <View style={mStyles.userMarkerDot} />
+                        </View>
+                    </Marker>
 
-                      const phone = creator?.mobileNumber || '';
+                    <Circle
+                        center={{ latitude: location.latitude, longitude: location.longitude }}
+                        radius={activeRadius * 1000}
+                        fillColor="rgba(47, 123, 94, 0.15)"
+                        strokeColor="rgba(47, 123, 94, 0.5)"
+                        strokeWidth={2}
+                    />
 
-                      return (
-                          <Marker 
-                             key={item._id} 
-                             coordinate={{ latitude: item.location.coordinates[1], longitude: item.location.coordinates[0] }} 
-                             onPress={(e) => { e.stopPropagation(); setSelectedMarker(item); }}
-                          >
-                             <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.3, shadowRadius: 3, elevation: 4 }}>
-                                <Ionicons name="gift" size={16} color="#F39C12" />
-                             </View>
-                          </Marker>
-                      );
-                  })}
-                  {routeCoords.length > 1 && (
-                      <>
-                          <Polyline 
-                              coordinates={routeCoords}
-                              strokeColor="#3498DB"
-                              strokeWidth={4}
-                          />
-                          <Marker coordinate={routeCoords[Math.floor(routeCoords.length / 2)]}>
-                              <View style={{ backgroundColor: '#1E293B', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, shadowColor: '#000', shadowOffset: {width:0, height:2}, shadowOpacity: 0.3, shadowRadius: 4, elevation: 4}}>
-                                   <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>{routeDistance || calculateDistance(location, selectedMarker.location)}</Text>
-                              </View>
-                          </Marker>
-                      </>
+                    {/* Donation Markers with filtering and jitter */}
+                    {(selectedCategory === 'All' ? nearbyItems : nearbyItems.filter(d => d.category === selectedCategory)).map(item => {
+                        if (!item.location || !item.location.coordinates) return null;
+                        
+                        // Add tiny jitter to prevent overlapping stack
+                        const lat = parseFloat(item.location.coordinates[1]) + (Math.random() - 0.5) * 0.0001;
+                        const lng = parseFloat(item.location.coordinates[0]) + (Math.random() - 0.5) * 0.0001;
+
+                        const distStr = calculateDistance(location, item.location);
+                        
+                        return (
+                            <Marker 
+                               key={item._id} 
+                               coordinate={{ latitude: lat, longitude: lng }} 
+                               onPress={(e) => { e.stopPropagation(); setSelectedMarker(item); }}
+                            >
+                               <View style={mStyles.donationMarker}>
+                                  <View style={mStyles.donationMarkerContent}>
+                                     <Ionicons name="gift" size={18} color="#FFF" />
+                                  </View>
+                                  <View style={mStyles.markerArrow} />
+                               </View>
+                            </Marker>
+                        );
+                    })}
+
+                    {routeCoords.length > 1 && (
+                        <>
+                            <Polyline 
+                                coordinates={routeCoords}
+                                strokeColor="#3498DB"
+                                strokeWidth={4}
+                            />
+                            <Marker coordinate={routeCoords[Math.floor(routeCoords.length / 2)]}>
+                                <View style={{ backgroundColor: '#1E293B', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, shadowColor: '#000', shadowOffset: {width:0, height:2}, shadowOpacity: 0.3, shadowRadius: 4, elevation: 4}}>
+                                     <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>{routeDistance || (selectedMarker ? calculateDistance(location, selectedMarker.location) : '')}</Text>
+                                </View>
+                            </Marker>
+                        </>
+                    )}
+                  </MapView>
+
+                  {/* Floating Map Controls */}
+                  <View style={mStyles.mapControls}>
+                    <TouchableOpacity 
+                      style={mStyles.controlBtn} 
+                      onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
+                    >
+                      <MaterialCommunityIcons name={mapType === 'standard' ? "layers-outline" : "map-outline"} size={22} color="#1E293B" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      style={mStyles.controlBtn} 
+                      onPress={() => setIsFullScreen(!isFullScreen)}
+                    >
+                      <Ionicons name={isFullScreen ? "contract" : "expand"} size={22} color="#1E293B" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {isFullScreen && (
+                    <TouchableOpacity 
+                        style={mStyles.backBtn}
+                        onPress={() => setIsFullScreen(false)}
+                    >
+                        <Ionicons name="arrow-back" size={24} color="#1E293B" />
+                    </TouchableOpacity>
                   )}
-                </MapView>
+                </View>
               ) : (
                  <View style={{flex:1, width: '100%', backgroundColor: '#E2F0E8', justifyContent:'center', alignItems:'center'}}>
                    <Ionicons name="location" color="#2F7B5E" size={32} />
@@ -548,13 +636,33 @@ const DashboardScreen = ({ navigation }) => {
           </View>
         </View>
 
+        <View style={{ marginBottom: 20 }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 5 }}>
+                {categories.map((cat) => (
+                    <TouchableOpacity
+                        key={cat}
+                        onPress={() => setSelectedCategory(cat)}
+                        style={[
+                            styles.categoryBadge,
+                            selectedCategory === cat && styles.categoryBadgeActive
+                        ]}
+                    >
+                        <Text style={[
+                            styles.categoryBadgeText,
+                            selectedCategory === cat && styles.categoryBadgeTextActive
+                        ]}>{cat}</Text>
+                    </TouchableOpacity>
+                ))}
+            </ScrollView>
+        </View>
+
         {/* Items List */}
-        {nearbyItems.length === 0 ? (
+        {(selectedCategory === 'All' ? nearbyItems : nearbyItems.filter(d => d.category === selectedCategory)).length === 0 ? (
             <View style={{ alignItems: 'center', paddingVertical: 40, backgroundColor: '#FFF', borderRadius: 24 }}>
                 <Text style={{ color: '#64748B', fontSize: 16 }}>No items found nearby 📍</Text>
             </View>
         ) : (
-            nearbyItems.map((item, index) => {
+            (selectedCategory === 'All' ? nearbyItems : nearbyItems.filter(d => d.category === selectedCategory)).map((item, index) => {
                 const creator = item.donor;
                 const minutesAgo = Math.max(0, Math.floor((new Date() - new Date(item.createdAt)) / 60000));
                 let timeStr = `${minutesAgo} mins ago`;
@@ -629,15 +737,16 @@ const DashboardScreen = ({ navigation }) => {
                                         });
                                         const data = await res.json();
                                         if (data.success) {
-                                            Alert.alert("Success", "Request sent! Check the Requests tab for updates.");
+                                            showToast("Request sent! Check the Requests tab. ✅");
                                         } else {
-                                            Alert.alert("Notice", data.message);
+                                            showToast(data.message, "info");
                                         }
                                     } catch (error) {
-                                        Alert.alert("Error", "Could not send request.");
+                                        showToast("Could not send request.", "error");
                                     }
                                 }}
                             >
+
                                 <Text style={{ color: '#FFF', fontSize: 12, fontWeight: 'bold' }}>Request</Text>
                             </TouchableOpacity>
                         </View>
@@ -651,7 +760,7 @@ const DashboardScreen = ({ navigation }) => {
           <View style={styles.impactHeader}>
             <View>
               <Text style={styles.impactTitle}>Your Impact</Text>
-              <Text style={styles.impactMotto}>Making a difference | ~y</Text>
+              <Text style={styles.impactMotto}>Making a difference together 🌿</Text>
             </View>
             <View style={styles.levelBadge}>
               <Text style={styles.levelText}>LEVEL 1</Text>
@@ -1271,7 +1380,42 @@ const styles = StyleSheet.create({
     width: 1,
     height: 40,
     backgroundColor: '#D1EAE0',
-  }
+  },
+  categoryBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryBadgeActive: {
+    backgroundColor: '#2F7B5E',
+    borderColor: '#2F7B5E',
+  },
+  categoryBadgeText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  categoryBadgeTextActive: {
+    color: '#FFF',
+  },
+});
+
+const mStyles = StyleSheet.create({
+    userMarkerContainer: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+    userMarkerPulse: { position: 'absolute', width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(52, 152, 219, 0.3)', transform: [{ scale: 1.2 }] },
+    userMarkerDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#3498DB', borderWidth: 2, borderColor: '#FFF', shadowColor: '#3498DB', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 5 },
+    donationMarker: { alignItems: 'center' },
+    donationMarkerContent: { backgroundColor: '#F39C12', padding: 8, borderRadius: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5, elevation: 8, borderWidth: 2, borderColor: '#FFF' },
+    markerArrow: { width: 0, height: 0, backgroundColor: 'transparent', borderStyle: 'solid', borderLeftWidth: 6, borderRightWidth: 6, borderBottomWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: '#FFF', transform: [{ rotate: '180deg' }], marginTop: -2 },
+    mapControls: { position: 'absolute', right: 15, top: 15, zIndex: 10 },
+    controlBtn: { backgroundColor: '#FFF', width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
+    backBtn: { position: 'absolute', left: 15, top: 40, zIndex: 10, backgroundColor: '#FFF', width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
 });
 
 export default DashboardScreen;

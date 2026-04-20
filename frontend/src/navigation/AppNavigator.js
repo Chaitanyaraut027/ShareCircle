@@ -14,6 +14,8 @@ import LeaderboardScreen from '../screens/LeaderboardScreen';
 import RequestsScreen from '../screens/RequestsScreen';
 import FindNearbyDonationsScreen from '../screens/FindNearbyDonationsScreen';
 import AdminDashboardScreen from '../screens/AdminDashboardScreen';
+import HistoryScreen from '../screens/HistoryScreen';
+
 
 const Stack = createStackNavigator();
 
@@ -46,6 +48,8 @@ const AppNavigator = () => {
                     headerBackTitleVisible: false,
                 }}
             />
+            <Stack.Screen name="History" component={HistoryScreen} />
+
         </Stack.Navigator>
     );
 };

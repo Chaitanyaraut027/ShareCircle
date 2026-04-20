@@ -64,6 +64,10 @@ const donationSchema = new mongoose.Schema({
         type: Date,
         default: Date.now,
     },
+    expiresAt: {
+        type: Date,
+        index: { expires: 0 }
+    }
 }, { timestamps: true });
 
 // Index for geospatial queries

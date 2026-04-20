@@ -81,9 +81,11 @@ export const getUserHistory = async (userId) => {
     }
 };
 
-export const updateUserLocation = async (userId, latitude, longitude, address) => {
+export const updateUserLocation = async (userId, latitude, longitude, address, homeNo = '', street = '', landmark = '', city = '', state = '') => {
     try {
-        const response = await api.put('/auth/update-location', { userId, latitude, longitude, address });
+        const response = await api.put('/auth/update-location', { 
+            userId, latitude, longitude, address, homeNo, street, landmark, city, state 
+        });
         return response.data;
     } catch (error) {
         console.error('API Error updating location:', error);

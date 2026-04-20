@@ -22,6 +22,12 @@ export const createDonation = async (req, res) => {
             }
         }
 
+        let expiresAt = null;
+        if (category === 'Food') {
+            expiresAt = new Date();
+            expiresAt.setHours(expiresAt.getHours() + 12);
+        }
+
         const donation = new Donation({
             donor: donorId,
             title,
@@ -30,6 +36,7 @@ export const createDonation = async (req, res) => {
             quantity,
             pickupAddress,
             image: imageUrl,
+            expiresAt,
             location: {
                 type: 'Point',
                 coordinates: [parseFloat(longitude) || 0, parseFloat(latitude) || 0]

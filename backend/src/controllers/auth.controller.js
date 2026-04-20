@@ -141,7 +141,7 @@ export const logout = async (req, res) => {
 // @access  Public (simplified)
 export const updateLocation = async (req, res) => {
     try {
-        const { userId, latitude, longitude, address } = req.body;
+        const { userId, latitude, longitude, address, homeNo, street, landmark, city, state } = req.body;
         
         if (!userId) {
             return res.status(400).json({ success: false, message: 'User ID is required' });
@@ -156,9 +156,12 @@ export const updateLocation = async (req, res) => {
             };
         }
         
-        if (address) {
-            updateQuery['address.fullAddress'] = address;
-        }
+        if (address) updateQuery['address.fullAddress'] = address;
+        if (homeNo) updateQuery['address.homeNo'] = homeNo;
+        if (street) updateQuery['address.street'] = street;
+        if (landmark) updateQuery['address.landmark'] = landmark;
+        if (city) updateQuery['address.city'] = city;
+        if (state) updateQuery['address.state'] = state;
 
         // Use $set to update specific fields without overwriting everything
         const user = await User.findByIdAndUpdate(
@@ -248,5 +251,61 @@ export const updatePushToken = async (req, res) => {
     } catch (error) {
         console.error('Update Push Token Error:', error);
         res.status(500).json({ success: false, message: 'Server error updating push token' });
+    }
+};
+// @desc    Update user profile (Name, Mobile, address)
+// @route   PUT /api/auth/update-profile
+// @access  Public
+export const updateProfile = async (req, res) => {
+    try {
+        const { userId, fullName, mobileNumber, homeNo, street, landmark, latitude, longitude } = req.body;
+        
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'User ID is required' });
+        }
+
+        const updateData = {};
+        if (fullName) updateData.fullName = fullName;
+        if (mobileNumber) updateData.mobileNumber = mobileNumber;
+        
+        // Handle address fields
+        const address = {};
+        if (homeNo !== undefined) address.homeNo = homeNo;
+        if (street !== undefined) address.street = street;
+        if (landmark !== undefined) address.fullAddress = landmark;
+        
+        if (Object.keys(address).length > 0) {
+            // Merge with existing address or set specific fields
+            // For simplicity in this update, we'll set these specific fields
+            if (homeNo !== undefined) updateData['address.homeNo'] = homeNo;
+            if (street !== undefined) updateData['address.street'] = street;
+            if (landmark !== undefined) updateData['address.fullAddress'] = landmark;
+        }
+
+        if (latitude !== undefined && longitude !== undefined) {
+            updateData.location = {
+                type: 'Point',
+                coordinates: [Number(longitude), Number(latitude)]
+            };
+        }
+
+        const user = await User.findByIdAndUpdate(
+            userId,
+            { $set: updateData },
+            { new: true, runValidators: false }
+        );
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Profile updated successfully',
+            user
+        });
+    } catch (error) {
+        console.error('Update Profile Error:', error);
+        res.status(500).json({ success: false, message: 'Server error updating profile' });
     }
 };

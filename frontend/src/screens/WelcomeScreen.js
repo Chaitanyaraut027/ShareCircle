@@ -35,6 +35,9 @@ const WelcomeScreen = ({ navigation }) => {
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
             <View style={styles.logoContainer}>
+                <View style={{ backgroundColor: '#F0F9F4', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, marginBottom: 10 }}>
+                    <Text style={{ color: COLORS.primary, fontWeight: '900', fontSize: 14, letterSpacing: 1 }}>COMMUNITY FIRST</Text>
+                </View>
                 <Text style={styles.appName}>ShareCircle</Text>
             </View>
 
@@ -61,14 +64,14 @@ const WelcomeScreen = ({ navigation }) => {
                     style={styles.button}
                     onPress={() => navigation.navigate('Register')}
                 >
-                    <Text style={styles.buttonText}>Register</Text>
+                    <Text style={styles.buttonText}>Get Started</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                     style={styles.buttonSecondary}
                     onPress={() => navigation.navigate('Login')}
                 >
-                    <Text style={styles.buttonTextSecondary}>Login</Text>
+                    <Text style={styles.buttonTextSecondary}>Already a member? Sign In</Text>
                 </TouchableOpacity>
             </View>
         </SafeAreaView>

@@ -1,26 +1,45 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, Modal, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, ScrollView, Modal, ActivityIndicator, StyleSheet, TouchableWithoutFeedback, Keyboard } from 'react-native';
+import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { COLORS } from '../utils/constants';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 import styles from '../styles/Auth';
 import { loginUser, updateUserLocation } from '../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
+import CustomToast from '../components/CustomToast';
+
 
 const LoginScreen = ({ navigation }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
     
     // location modal states
     const [showLocationModal, setShowLocationModal] = useState(false);
     const [locationUpdating, setLocationUpdating] = useState(false);
     const [storedUser, setStoredUser] = useState(null);
+    
+    // Toast setup
+    const [toastVisible, setToastVisible] = useState(false);
+    const [toastMessage, setToastMessage] = useState('');
+    const [toastType, setToastType] = useState('success');
+
+    const showToast = (msg, type = 'success') => {
+        setToastMessage(msg);
+        setToastType(type);
+        setToastVisible(true);
+    };
+
 
     const handleLogin = async () => {
         if (!email || !password) {
-            Alert.alert('Error', 'Please enter email and password');
+            showToast('Enter email and password.', 'error');
             return;
         }
+
 
         setLoading(true);
         try {
@@ -35,11 +54,12 @@ const LoginScreen = ({ navigation }) => {
                 setStoredUser(response.data);
                 setShowLocationModal(true);
             } else {
-                Alert.alert('Error', 'Login failed. Please try again.');
+                showToast('Login failed. Check details.', 'error');
             }
         } catch (error) {
-            Alert.alert('Error', error.message || 'Login failed');
+            showToast(error.message || 'Login failed.', 'error');
         } finally {
+
             setLoading(false);
         }
     };
@@ -97,44 +117,73 @@ const LoginScreen = ({ navigation }) => {
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-            <ScrollView contentContainerStyle={styles.container}>
-                <Text style={styles.title}>Welcome Back</Text>
+            <CustomToast visible={toastVisible} message={toastMessage} type={toastType} onHide={() => setToastVisible(false)} />
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
 
-                <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Email</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Enter your email"
-                        value={email}
-                        onChangeText={setEmail}
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                    />
-                </View>
+                <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+                    <View style={styles.headerSection}>
+                        <View style={styles.logoContainer}>
+                            <MaterialCommunityIcons name="heart-multiple" size={40} color={COLORS.primary} />
+                        </View>
+                        <Text style={styles.title}>Welcome Back</Text>
+                        <Text style={styles.subtitle}>Sign in to continue sharing kindness</Text>
+                    </View>
 
-                <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Password</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Enter your password"
-                        value={password}
-                        onChangeText={setPassword}
-                        secureTextEntry
-                    />
-                </View>
+                    <View style={styles.inputContainer}>
+                        <Text style={styles.label}>Email Address</Text>
+                        <View style={styles.inputWrapper}>
+                            <Feather name="mail" size={20} color={COLORS.primary} style={styles.inputIcon} />
+                            <TextInput
+                                style={styles.inputField}
+                                placeholder="name@example.com"
+                                placeholderTextColor="#94A3B8"
+                                value={email}
+                                onChangeText={setEmail}
+                                keyboardType="email-address"
+                                autoCapitalize="none"
+                            />
+                        </View>
+                    </View>
 
-                <TouchableOpacity
-                    style={styles.button}
-                    onPress={handleLogin}
-                    disabled={loading}
-                >
-                    <Text style={styles.buttonText}>{loading ? 'Logging in...' : 'Login'}</Text>
-                </TouchableOpacity>
+                    <View style={styles.inputContainer}>
+                        <Text style={styles.label}>Password</Text>
+                        <View style={styles.inputWrapper}>
+                            <Feather name="lock" size={20} color={COLORS.primary} style={styles.inputIcon} />
+                            <TextInput
+                                style={styles.inputField}
+                                placeholder="••••••••"
+                                placeholderTextColor="#94A3B8"
+                                value={password}
+                                onChangeText={setPassword}
+                                secureTextEntry={!showPassword}
+                            />
+                            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+                                <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={22} color="#94A3B8" />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
 
-                <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-                    <Text style={styles.linkText}>Don't have an account? Register</Text>
-                </TouchableOpacity>
-            </ScrollView>
+                    <TouchableOpacity onPress={() => Alert.alert('Information', 'Please contact support at support@sharecircle.com to reset your password.')}>
+                        <Text style={styles.forgotPassword}>Forgot Password?</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.button}
+                        onPress={handleLogin}
+                        disabled={loading}
+                    >
+                        {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Sign In</Text>}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+                        <View style={styles.footerLinkRow}>
+                            <Text style={styles.footerText}>New to ShareCircle?</Text>
+                            <Text style={styles.footerLinkBold}>Create Account</Text>
+                        </View>
+                    </TouchableOpacity>
+                </ScrollView>
+            </TouchableWithoutFeedback>
+
             <Modal visible={showLocationModal} animationType="slide" transparent>
                 <View style={modalStyles.modalOverlay}>
                     <View style={modalStyles.modalContainer}>

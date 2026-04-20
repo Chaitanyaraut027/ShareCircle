@@ -2,6 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Image, StyleSheet, Animated, Dimensions } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Prevent native splash screen from autohiding
 SplashScreen.preventAutoHideAsync();
@@ -19,8 +20,20 @@ const SplashScreenComponent = ({ navigation }) => {
             } catch (e) {
                 console.warn(e);
             } finally {
+                const userToken = await AsyncStorage.getItem('token');
+                const userData = await AsyncStorage.getItem('user');
                 await SplashScreen.hideAsync();
-                navigation.replace('Onboarding'); // Navigate to Onboarding sliders
+
+                if (userToken && userData) {
+                    try {
+                        const user = JSON.parse(userData);
+                        navigation.replace('MainTabs', { user });
+                    } catch (e) {
+                        navigation.replace('Onboarding');
+                    }
+                } else {
+                    navigation.replace('Onboarding');
+                }
             }
         };
 
@@ -37,7 +50,7 @@ const SplashScreenComponent = ({ navigation }) => {
     return (
         <View style={styles.container}>
             <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
-                {/* Logo */}
+                {/* New Logo */}
                 <Image
                     source={require('../../assets/splash.png')}
                     style={styles.logo}

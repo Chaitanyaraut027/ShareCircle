@@ -39,7 +39,9 @@ const userSchema = new mongoose.Schema({
   },
   // Profile fields (can be updated after registration)
   address: {
+    homeNo: String,
     street: String,
+    landmark: String,
     city: String,
     state: String,
     zip: String,

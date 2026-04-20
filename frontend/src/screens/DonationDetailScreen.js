@@ -89,10 +89,24 @@ const DonationDetailScreen = ({ route, navigation }) => {
                     <View style={styles.divider} />
 
                     <View style={styles.donorSection}>
-                        <Image 
-                            source={{ uri: item.donor?.profilePic || 'https://i.pravatar.cc/150' }} 
-                            style={styles.donorAvatar}
-                        />
+                        {item.donor?.profilePic ? (
+                            <Image 
+                                source={{ uri: item.donor.profilePic }} 
+                                style={styles.donorAvatar}
+                            />
+                        ) : (
+                            <View style={[styles.donorAvatar, styles.initialsAvatar]}>
+                                <Text style={styles.initialsText}>
+                                    {(() => {
+                                        const name = item.donor?.fullName || 'User';
+                                        const parts = name.split(' ');
+                                        return parts.length > 1 
+                                            ? (parts[0][0] + parts[parts.length-1][0]).toUpperCase()
+                                            : parts[0].substring(0, 2).toUpperCase();
+                                    })()}
+                                </Text>
+                            </View>
+                        )}
                         <View style={styles.donorInfo}>
                             <Text style={styles.donorName}>{item.donor?.fullName || 'Anonymous Donor'}</Text>
                             <Text style={styles.donorBadge}>Verified Donor</Text>
@@ -169,6 +183,8 @@ const styles = StyleSheet.create({
     description: { fontSize: 16, color: '#475569', lineHeight: 24 },
     donorSection: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', padding: 15, borderRadius: 20, marginBottom: 25 },
     donorAvatar: { width: 50, height: 50, borderRadius: 25, marginRight: 15 },
+    initialsAvatar: { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#CBD5E1' },
+    initialsText: { color: '#475569', fontSize: 18, fontWeight: '800' },
     donorInfo: { flex: 1 },
     donorName: { fontSize: 16, fontWeight: '700', color: '#1E293B' },
     donorBadge: { fontSize: 12, color: '#27AE60', fontWeight: '600' },

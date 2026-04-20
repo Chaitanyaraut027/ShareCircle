@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Linking, Image, Dimensions, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import MapView, { Marker, Circle, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
-import { Image, Dimensions } from 'react-native';
 import Slider from '@react-native-community/slider';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -69,6 +68,12 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
     const [selectedMarker, setSelectedMarker] = useState(null);
     const [routeCoords, setRouteCoords] = useState([]);
     const [routeDistance, setRouteDistance] = useState(null);
+    const [mapType, setMapType] = useState('standard');
+    const [isFullScreen, setIsFullScreen] = useState(false);
+    const [selectedCategory, setSelectedCategory] = useState('All');
+    const [refreshing, setRefreshing] = useState(false);
+
+    const categories = ['All', 'Food', 'Clothes', 'Books', 'Furniture', 'Electronics', 'Other'];
 
     const fetchDonations = useCallback(async (query, r, loc, uid = userId) => {
         if (!loc) return;
@@ -85,7 +90,9 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
                 }
             });
             if (data.success) {
-                setDonations(data.data);
+                // Sort by time: Older donations on top
+                const sortedData = [...data.data].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+                setDonations(sortedData);
             }
         } catch (error) {
             console.error("Failed to fetch nearby donations", error);
@@ -295,11 +302,37 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
                 </TouchableOpacity>
             </View>
 
-            <View style={styles.mapContainer}>
+            {/* Category Filter */}
+            <View style={{ backgroundColor: '#FFF', paddingBottom: 10 }}>
+                <FlatList 
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    data={categories}
+                    keyExtractor={(item) => item}
+                    contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 5 }}
+                    renderItem={({ item }) => (
+                        <TouchableOpacity 
+                            style={[
+                                styles.categoryBadge, 
+                                selectedCategory === item && styles.categoryBadgeActive
+                            ]}
+                            onPress={() => setSelectedCategory(item)}
+                        >
+                            <Text style={[
+                                styles.categoryBadgeText, 
+                                selectedCategory === item && styles.categoryBadgeTextActive
+                            ]}>{item}</Text>
+                        </TouchableOpacity>
+                    )}
+                />
+            </View>
+
+            <View style={isFullScreen ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, backgroundColor: '#FAFAFA' } : styles.mapContainer}>
                 {location ? (
                     <>
                         <MapView 
                             style={styles.map}
+                            mapType={mapType}
                             region={{
                                 latitude: location.latitude,
                                 longitude: location.longitude,
@@ -307,10 +340,15 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
                                 longitudeDelta: (radius / 111.32) * 2.2,
                             }}
                             onPress={() => setSelectedMarker(null)}
+                            zoomEnabled={true}
+                            scrollEnabled={true}
+                            pitchEnabled={true}
+                            rotateEnabled={true}
                         >
                             <Marker coordinate={location}>
-                                <View style={styles.userDotOuter}>
-                                    <View style={styles.userDot} />
+                                <View style={mStyles.userMarkerContainer}>
+                                    <View style={mStyles.userMarkerPulse} />
+                                    <View style={mStyles.userMarkerDot} />
                                 </View>
                             </Marker>
 
@@ -319,22 +357,28 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
                                 radius={radius * 1000}
                                 fillColor="rgba(16, 185, 129, 0.1)"
                                 strokeColor="rgba(16, 185, 129, 0.4)"
-                                strokeWidth={1}
+                                strokeWidth={2}
                             />
 
-                            {donations.map((item) => {
+                            {/* Donation Markers */}
+                            {(selectedCategory === 'All' ? donations : donations.filter(d => d.category === selectedCategory)).map((item, index) => {
                                 if (!item.location || !item.location.coordinates) return null;
                                 
-                                const person = item.donor;
-                                
+                                // Add tiny jitter if multiple markers at same spot
+                                const lat = parseFloat(item.location.coordinates[1]) + (Math.random() - 0.5) * 0.0001;
+                                const lng = parseFloat(item.location.coordinates[0]) + (Math.random() - 0.5) * 0.0001;
+
                                 return (
                                     <Marker 
                                         key={item._id}
-                                        coordinate={{ latitude: item.location.coordinates[1], longitude: item.location.coordinates[0] }}
+                                        coordinate={{ latitude: lat, longitude: lng }}
                                         onPress={(e) => { e.stopPropagation(); setSelectedMarker(item); }}
                                     >
-                                        <View style={styles.markerCircle}>
-                                            <Ionicons name="gift" size={16} color="#F39C12" />
+                                        <View style={mStyles.donationMarker}>
+                                            <View style={mStyles.donationMarkerContent}>
+                                                <Ionicons name="gift" size={16} color="#FFF" />
+                                            </View>
+                                            <View style={mStyles.markerArrow} />
                                         </View>
                                     </Marker>
                                 );
@@ -349,12 +393,37 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
                                     />
                                     <Marker coordinate={routeCoords[Math.floor(routeCoords.length / 2)]}>
                                         <View style={styles.distanceBadge}>
-                                            <Text style={styles.distanceBadgeText}>{routeDistance || haversineDistance(location, selectedMarker.location)}</Text>
+                                            <Text style={styles.distanceBadgeText}>{routeDistance || haversineDistance(location, selectedMarker.location) + ' km'}</Text>
                                         </View>
                                     </Marker>
                                 </>
                             )}
                         </MapView>
+
+                        <View style={mStyles.mapControls}>
+                            <TouchableOpacity 
+                                style={mStyles.controlBtn} 
+                                onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
+                            >
+                                <MaterialCommunityIcons name={mapType === 'standard' ? "layers-outline" : "map-outline"} size={22} color="#1E293B" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                                style={mStyles.controlBtn} 
+                                onPress={() => setIsFullScreen(!isFullScreen)}
+                            >
+                                <Ionicons name={isFullScreen ? "contract" : "expand"} size={22} color="#1E293B" />
+                            </TouchableOpacity>
+                        </View>
+
+                        {isFullScreen && (
+                            <TouchableOpacity 
+                                style={mStyles.backBtn}
+                                onPress={() => setIsFullScreen(false)}
+                            >
+                                <Ionicons name="arrow-back" size={24} color="#1E293B" />
+                            </TouchableOpacity>
+                        )}
 
                         {selectedMarker && (
                             <View style={styles.selectedOverlay}>
@@ -374,7 +443,7 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
                                         </Text>
                                         <Text style={styles.overlayTitle} numberOfLines={1}>{selectedMarker.title}</Text>
                                         <Text style={styles.overlayDist}>
-                                            Distance: {routeDistance || haversineDistance(location, selectedMarker.location)}
+                                            Distance: {routeDistance || haversineDistance(location, selectedMarker.location) + ' km'}
                                         </Text>
                                     </View>
                                 </TouchableOpacity>
@@ -426,10 +495,17 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
 
             <View style={{ flex: 1 }}>
                 <FlatList 
-                    data={donations}
+                    data={selectedCategory === 'All' ? donations : donations.filter(d => d.category === selectedCategory)}
                     keyExtractor={(item) => item._id}
                     renderItem={renderItem}
                     contentContainerStyle={styles.listContent}
+                    refreshControl={
+                        <RefreshControl 
+                            refreshing={refreshing}
+                            onRefresh={() => fetchDonations(searchQuery, radius, location)}
+                            colors={['#10B981']}
+                        />
+                    }
                     ListEmptyComponent={
                         loading && location ? <ActivityIndicator color="#10B981" style={{marginTop: 20}} /> : 
                         <Text style={styles.emptyText}>{searchQuery ? `${type} not found` : `no ${type} found`}</Text>
@@ -448,6 +524,10 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#FAFAFA' },
+    categoryBadge: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F1F5F9', marginRight: 10, borderWidth: 1, borderColor: '#E2E8F0' },
+    categoryBadgeActive: { backgroundColor: '#10B981', borderColor: '#10B981' },
+    categoryBadgeText: { fontSize: 13, color: '#64748B', fontWeight: '600' },
+    categoryBadgeTextActive: { color: '#FFF' },
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 10, backgroundColor: '#FFF' },
     headerTitle: { fontSize: 17, fontWeight: '800', color: '#1E293B' },
     searchSection: { backgroundColor: '#FFF', paddingHorizontal: 20, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
@@ -489,6 +569,18 @@ const styles = StyleSheet.create({
     footer: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 15, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#F1F5F9' },
     requestBtn: { backgroundColor: '#10B981', height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
     requestBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' }
+});
+
+const mStyles = StyleSheet.create({
+    userMarkerContainer: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+    userMarkerPulse: { position: 'absolute', width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(52, 152, 219, 0.3)', transform: [{ scale: 1.2 }] },
+    userMarkerDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#3498DB', borderWidth: 2, borderColor: '#FFF', shadowColor: '#3498DB', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 5 },
+    donationMarker: { alignItems: 'center' },
+    donationMarkerContent: { backgroundColor: '#F39C12', padding: 8, borderRadius: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5, elevation: 8, borderWidth: 2, borderColor: '#FFF' },
+    markerArrow: { width: 0, height: 0, backgroundColor: 'transparent', borderStyle: 'solid', borderLeftWidth: 6, borderRightWidth: 6, borderBottomWidth: 8, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: '#FFF', transform: [{ rotate: '180deg' }], marginTop: -2 },
+    mapControls: { position: 'absolute', right: 15, top: 15, zIndex: 10 },
+    controlBtn: { backgroundColor: '#FFF', width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
+    backBtn: { position: 'absolute', left: 15, top: 40, zIndex: 10, backgroundColor: '#FFF', width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
 });
 
 export default FindNearbyDonationsScreen;

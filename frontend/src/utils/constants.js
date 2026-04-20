@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 const getApiUrl = () => {
-    // ALWAYS use the live Render URL for production/testing on devices
+    // PRODUCTION (Render)
     return 'https://sharecircle-xjq0.onrender.com/api';
     
     /* 
