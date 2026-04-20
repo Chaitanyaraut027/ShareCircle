@@ -37,6 +37,7 @@ const DonateFormScreen = ({ navigation }) => {
     const [landmark, setLandmark] = useState('');
     const [pincode, setPincode] = useState('');
     const [coords, setCoords] = useState(null);
+    const [mapRegion, setMapRegion] = useState(null);
     const [showMap, setShowMap] = useState(false);
     const [mapType, setMapType] = useState('standard');
     const [isFullScreen, setIsFullScreen] = useState(false);
@@ -141,6 +142,7 @@ const DonateFormScreen = ({ navigation }) => {
                     const { latitude, longitude } = results[0];
                     const newCoords = { latitude, longitude };
                     setCoords(newCoords);
+                    setMapRegion(newCoords);
                     setIsFullScreen(true);
                     setIsAdjustMode(false); 
                 }
@@ -186,6 +188,7 @@ const DonateFormScreen = ({ navigation }) => {
             const { latitude, longitude } = location.coords;
             const newCoords = { latitude, longitude };
             setCoords(newCoords);
+            setMapRegion(newCoords);
 
             const reverse = await Location.reverseGeocodeAsync(newCoords);
             if (reverse && reverse.length > 0) {
@@ -212,10 +215,12 @@ const DonateFormScreen = ({ navigation }) => {
             if (extractedZip) setPincode(extractedZip);
             
             if (user.location?.coordinates) {
-                setCoords({
+                const newCoords = {
                     latitude: user.location.coordinates[1],
                     longitude: user.location.coordinates[0]
-                });
+                };
+                setCoords(newCoords);
+                setMapRegion(newCoords);
                 setIsFullScreen(true);
             }
             showToast('Profile address loaded! 🏠');
@@ -525,8 +530,9 @@ const DonateFormScreen = ({ navigation }) => {
                             </View>
                             <FreeMap
                                 style={{ flex: 1 }}
-                                region={coords ? { ...coords, latitudeDelta: 0.005, longitudeDelta: 0.005 } : null}
+                                region={mapRegion ? { ...mapRegion, latitudeDelta: 0.005, longitudeDelta: 0.005 } : (coords ? { ...coords, latitudeDelta: 0.005, longitudeDelta: 0.005 } : null)}
                                 onRegionChangeComplete={(newReg) => {
+                                    setMapRegion(newReg);
                                     if (isAdjustMode) {
                                         setCoords({ latitude: newReg.latitude, longitude: newReg.longitude });
                                     }

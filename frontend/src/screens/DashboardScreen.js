@@ -66,6 +66,7 @@ const formatPhoneNumber = (phone, isWhatsApp = false) => {
 const DashboardScreen = ({ navigation }) => {
   const [user, setUser] = useState(null);
   const [location, setLocation] = useState(null);
+  const [mapRegion, setMapRegion] = useState(null);
   const [nearbyItems, setNearbyItems] = useState([]);
   const [radiusInput, setRadiusInput] = useState('50');
   const [activeRadius, setActiveRadius] = useState(50);
@@ -185,6 +186,7 @@ const DashboardScreen = ({ navigation }) => {
                 longitudeDelta: 0.0421,
               };
               setLocation(activeLocation);
+              if (!mapRegion) setMapRegion(activeLocation);
             }
           }
 
@@ -461,8 +463,8 @@ const DashboardScreen = ({ navigation }) => {
                 <View style={{ flex: 1 }}>
                   <FreeMap
                     style={{ width: '100%', height: '100%' }}
-                    region={location}
-                    onRegionChangeComplete={(reg) => setLocation(reg)}
+                    region={mapRegion || location}
+                    onRegionChangeComplete={(reg) => setMapRegion(reg)}
                     userLocation={location}
                     circle={{
                         latitude: location.latitude,
