@@ -451,7 +451,7 @@ const DashboardScreen = ({ navigation }) => {
                   <MapView
                     style={styles.map}
                     region={location}
-                    mapType={Platform.OS === 'android' ? 'none' : 'standard'}
+                    mapType="none"
                     showsUserLocation={true}
                     showsMyLocationButton={false}
                     onPress={() => setSelectedMarker(null)}
@@ -460,13 +460,11 @@ const DashboardScreen = ({ navigation }) => {
                     pitchEnabled={true}
                     rotateEnabled={true}
                   >
-                    {Platform.OS === 'android' && (
-                      <UrlTile
-                        urlTemplate="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        maximumZ={19}
-                        flipY={false}
-                      />
-                    )}
+                    <UrlTile
+                      urlTemplate="https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
+                      maximumZ={19}
+                      flipY={false}
+                    />
                     {/* Pulsing User Marker */}
                     <Marker coordinate={{ latitude: location.latitude, longitude: location.longitude }}>
                         <View style={mStyles.userMarkerContainer}>
@@ -487,12 +485,11 @@ const DashboardScreen = ({ navigation }) => {
                     {(selectedCategory === 'All' ? nearbyItems : nearbyItems.filter(d => d.category === selectedCategory)).map(item => {
                         if (!item.location || !item.location.coordinates) return null;
                         
-                        // Add tiny jitter to prevent overlapping stack
-                        const lat = parseFloat(item.location.coordinates[1]) + (Math.random() - 0.5) * 0.0001;
-                        const lng = parseFloat(item.location.coordinates[0]) + (Math.random() - 0.5) * 0.0001;
+                        // Use exact stored coordinates for accurate marker placement
+                        const lat = parseFloat(item.location.coordinates[1]);
+                        const lng = parseFloat(item.location.coordinates[0]);
+                        if (isNaN(lat) || isNaN(lng)) return null;
 
-                        const distStr = calculateDistance(location, item.location);
-                        
                         return (
                             <Marker 
                                key={item._id} 

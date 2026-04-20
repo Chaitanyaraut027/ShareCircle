@@ -535,15 +535,13 @@ const DonateFormScreen = ({ navigation }) => {
                                 ref={fullMapRef}
                                 style={{ flex: 1 }}
                                 initialRegion={coords ? { ...coords, latitudeDelta: 0.005, longitudeDelta: 0.005 } : null}
-                                mapType={Platform.OS === 'android' ? 'none' : 'standard'}
+                                mapType="none"
                             >
-                                {Platform.OS === 'android' && (
-                                    <UrlTile
-                                        urlTemplate="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                        maximumZ={19}
-                                        flipY={false}
-                                    />
-                                )}
+                                <UrlTile
+                                    urlTemplate="https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
+                                    maximumZ={19}
+                                    flipY={false}
+                                />
                                 {coords && (
                                     <Marker
                                         coordinate={coords}

@@ -331,7 +331,7 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
                     <>
                         <MapView 
                             style={styles.map}
-                            mapType={Platform.OS === 'android' ? 'none' : 'standard'}
+                            mapType="none"
                             region={{
                                 latitude: location.latitude,
                                 longitude: location.longitude,
@@ -344,13 +344,11 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
                             pitchEnabled={true}
                             rotateEnabled={true}
                         >
-                            {Platform.OS === 'android' && (
-                                <UrlTile
-                                    urlTemplate="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                    maximumZ={19}
-                                    flipY={false}
-                                />
-                            )}
+                            <UrlTile
+                                urlTemplate="https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
+                                maximumZ={19}
+                                flipY={false}
+                            />
                             <Marker coordinate={location}>
                                 <View style={mStyles.userMarkerContainer}>
                                     <View style={mStyles.userMarkerPulse} />
