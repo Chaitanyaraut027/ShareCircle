@@ -5,7 +5,7 @@ import { useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import MapView, { Marker, Circle, UrlTile } from 'react-native-maps';
+import LeafletMap from '../components/LeafletMap';
 import { useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
@@ -531,25 +531,28 @@ const DonateFormScreen = ({ navigation }) => {
                                     <Ionicons name="layers" size={24} color="#FFF" />
                                 </TouchableOpacity>
                             </View>
-                            <MapView
-                                ref={fullMapRef}
+                            <LeafletMap
                                 style={{ flex: 1 }}
-                                initialRegion={coords ? { ...coords, latitudeDelta: 0.005, longitudeDelta: 0.005 } : null}
-                                mapType="none"
-                            >
-                                <UrlTile
-                                    urlTemplate="https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
-                                    maximumZ={19}
-                                    flipY={false}
-                                />
-                                {coords && (
-                                    <Marker
-                                        coordinate={coords}
-                                        draggable
-                                        onDragEnd={handleMarkerDragEnd}
-                                    />
-                                )}
-                            </MapView>
+                                latitude={coords ? coords.latitude : 20.5937}
+                                longitude={coords ? coords.longitude : 78.9629}
+                                zoom={coords ? 15 : 5}
+                                draggable={true}
+                                onCoordChange={async (newCoords) => {
+                                    setCoords(newCoords);
+                                    try {
+                                        const reverseGeocode = await Location.reverseGeocodeAsync(newCoords);
+                                        if (reverseGeocode && reverseGeocode.length > 0) {
+                                            const addr = reverseGeocode[0];
+                                            const detailedAddr = [addr.name, addr.street, addr.district, addr.city].filter(Boolean).join(', ');
+                                            if (detailedAddr) {
+                                                setStreet(addr.street || addr.district || '');
+                                                setLandmark(detailedAddr);
+                                            }
+                                            if (addr.postalCode) setPincode(addr.postalCode);
+                                        }
+                                    } catch (e) { console.log('Reverse geocode error', e); }
+                                }}
+                            />
                             <View style={styles.mapActionsContainer}>
                                 {isAdjustMode && (
                                     <View style={styles.adjustInstructionCard}>

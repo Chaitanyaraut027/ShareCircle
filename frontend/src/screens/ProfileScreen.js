@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import MapView, { Marker, UrlTile } from 'react-native-maps';
+import LeafletMap from '../components/LeafletMap';
 import { useRef } from 'react';
 import { COLORS } from '../utils/constants';
 import { updateUserLocation, updateProfilePicture, loginUser } from '../services/api'; // Assuming we might need to refresh user data
@@ -203,8 +203,8 @@ const ProfileScreen = ({ navigation, route }) => {
         return () => clearTimeout(delayDebounceFn);
     }, [landmark, street, pincode, showEditModal]);
 
-    const handleMarkerDragEnd = async (e) => {
-        const newCoords = e.nativeEvent.coordinate;
+    const handleMarkerDragEnd = async (newCoords) => {
+        // newCoords is {latitude, longitude} from LeafletMap onCoordChange
         setCoords(newCoords);
         try {
             const reverseGeocode = await Location.reverseGeocodeAsync(newCoords);
@@ -523,25 +523,14 @@ const ProfileScreen = ({ navigation, route }) => {
                                 <Ionicons name="layers" size={24} color="#FFF" />
                             </TouchableOpacity>
                         </View>
-                        <MapView
-                            ref={fullMapRef}
+                        <LeafletMap
                             style={{ flex: 1 }}
-                            initialRegion={coords ? { ...coords, latitudeDelta: 0.005, longitudeDelta: 0.005 } : null}
-                            mapType="none"
-                        >
-                            <UrlTile
-                                urlTemplate="https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
-                                maximumZ={19}
-                                flipY={false}
-                            />
-                            {coords && (
-                                <Marker
-                                    coordinate={coords}
-                                    draggable
-                                    onDragEnd={handleMarkerDragEnd}
-                                />
-                            )}
-                        </MapView>
+                            latitude={coords ? coords.latitude : 20.5937}
+                            longitude={coords ? coords.longitude : 78.9629}
+                            zoom={coords ? 15 : 5}
+                            draggable={true}
+                            onCoordChange={handleMarkerDragEnd}
+                        />
                         <View style={styles.mapActionsContainer}>
                             {isAdjustMode && (
                                 <View style={styles.adjustInstructionCard}>
