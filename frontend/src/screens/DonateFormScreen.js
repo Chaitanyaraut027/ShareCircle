@@ -5,13 +5,13 @@ import { useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import MapView, { Marker, Circle, UrlTile } from 'react-native-maps';
 import { useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
 import { COLORS, API_URL } from '../utils/constants';
 import CustomToast from '../components/CustomToast';
-import FreeMap from '../components/FreeMap';
 
 const { width } = Dimensions.get('window');
 
@@ -37,7 +37,6 @@ const DonateFormScreen = ({ navigation }) => {
     const [landmark, setLandmark] = useState('');
     const [pincode, setPincode] = useState('');
     const [coords, setCoords] = useState(null);
-    const [mapRegion, setMapRegion] = useState(null);
     const [showMap, setShowMap] = useState(false);
     const [mapType, setMapType] = useState('standard');
     const [isFullScreen, setIsFullScreen] = useState(false);
@@ -142,9 +141,16 @@ const DonateFormScreen = ({ navigation }) => {
                     const { latitude, longitude } = results[0];
                     const newCoords = { latitude, longitude };
                     setCoords(newCoords);
-                    setMapRegion(newCoords);
                     setIsFullScreen(true);
                     setIsAdjustMode(false); 
+                    
+                    setTimeout(() => {
+                        fullMapRef.current?.animateToRegion({
+                            ...newCoords,
+                            latitudeDelta: 0.005,
+                            longitudeDelta: 0.005,
+                        }, 1000);
+                    }, 500);
                 }
             } catch (error) {
                 console.error("Geocoding error:", error);
@@ -188,7 +194,6 @@ const DonateFormScreen = ({ navigation }) => {
             const { latitude, longitude } = location.coords;
             const newCoords = { latitude, longitude };
             setCoords(newCoords);
-            setMapRegion(newCoords);
 
             const reverse = await Location.reverseGeocodeAsync(newCoords);
             if (reverse && reverse.length > 0) {
@@ -215,12 +220,10 @@ const DonateFormScreen = ({ navigation }) => {
             if (extractedZip) setPincode(extractedZip);
             
             if (user.location?.coordinates) {
-                const newCoords = {
+                setCoords({
                     latitude: user.location.coordinates[1],
                     longitude: user.location.coordinates[0]
-                };
-                setCoords(newCoords);
-                setMapRegion(newCoords);
+                });
                 setIsFullScreen(true);
             }
             showToast('Profile address loaded! 🏠');
@@ -528,17 +531,27 @@ const DonateFormScreen = ({ navigation }) => {
                                     <Ionicons name="layers" size={24} color="#FFF" />
                                 </TouchableOpacity>
                             </View>
-                            <FreeMap
+                            <MapView
+                                ref={fullMapRef}
                                 style={{ flex: 1 }}
-                                region={mapRegion ? { ...mapRegion, latitudeDelta: 0.005, longitudeDelta: 0.005 } : (coords ? { ...coords, latitudeDelta: 0.005, longitudeDelta: 0.005 } : null)}
-                                onRegionChangeComplete={(newReg) => {
-                                    setMapRegion(newReg);
-                                    if (isAdjustMode) {
-                                        setCoords({ latitude: newReg.latitude, longitude: newReg.longitude });
-                                    }
-                                }}
-                                selectedLocation={coords}
-                            />
+                                initialRegion={coords ? { ...coords, latitudeDelta: 0.005, longitudeDelta: 0.005 } : null}
+                                mapType={Platform.OS === 'android' ? 'none' : 'standard'}
+                            >
+                                {Platform.OS === 'android' && (
+                                    <UrlTile
+                                        urlTemplate="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                        maximumZ={19}
+                                        flipY={false}
+                                    />
+                                )}
+                                {coords && (
+                                    <Marker
+                                        coordinate={coords}
+                                        draggable
+                                        onDragEnd={handleMarkerDragEnd}
+                                    />
+                                )}
+                            </MapView>
                             <View style={styles.mapActionsContainer}>
                                 {isAdjustMode && (
                                     <View style={styles.adjustInstructionCard}>

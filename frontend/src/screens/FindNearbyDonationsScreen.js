@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Linking, Image, Dimensions, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
-import FreeMap from '../components/FreeMap';
+import MapView, { Marker, Circle, Polyline, UrlTile } from 'react-native-maps';
 import * as Location from 'expo-location';
 import Slider from '@react-native-community/slider';
 import axios from 'axios';
@@ -60,10 +60,9 @@ const haversineDistance = (coords1, coords2) => {
 const FindNearbyDonationsScreen = ({ route, navigation }) => {
     const type = 'donations';
     const [searchQuery, setSearchQuery] = useState('');
-    const [radius, setRadius] = useState(50);
+    const [radius, setRadius] = useState(5);
     const [donations, setDonations] = useState([]);
     const [location, setLocation] = useState(null);
-    const [mapRegion, setMapRegion] = useState(null);
     const [userId, setUserId] = useState(null);
     const [loading, setLoading] = useState(true);
     const [selectedMarker, setSelectedMarker] = useState(null);
@@ -134,46 +133,12 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
 
             if (myLoc) {
                 setLocation(myLoc);
-                if (!mapRegion) setMapRegion(myLoc);
                 fetchDonations(searchQuery, radius, myLoc, currentUserId);
             } else {
                 alert('Could not determine location. Please update your profile.');
             }
         })();
     }, []);
-
-    useEffect(() => {
-        if (selectedMarker && location && selectedMarker.location?.coordinates) {
-            const getRoute = async () => {
-                const start = location;
-                const end = { latitude: selectedMarker.location.coordinates[1], longitude: selectedMarker.location.coordinates[0] };
-                try {
-                    const response = await fetch(`http://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson`);
-                    const data = await response.json();
-                    
-                    if (data.routes && data.routes.length > 0) {
-                        const coords = data.routes[0].geometry.coordinates.map(c => ({
-                            latitude: c[1],
-                            longitude: c[0]
-                        }));
-                        setRouteCoords(coords);
-                        setRouteDistance((data.routes[0].distance / 1000).toFixed(1) + ' KM');
-                    } else {
-                        setRouteCoords([start, end]);
-                        setRouteDistance(haversineDistance(start, selectedMarker.location) + ' km');
-                    }
-                } catch(e) {
-                    console.error("Routing error:", e);
-                    setRouteCoords([start, end]);
-                    setRouteDistance(haversineDistance(start, selectedMarker.location) + ' km');
-                }
-            };
-            getRoute();
-        } else {
-            setRouteCoords([]);
-            setRouteDistance(null);
-        }
-    }, [selectedMarker, location]);
 
     useEffect(() => {
         if (!location) return;
@@ -361,35 +326,94 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
                     )}
                 />
             </View>
-
             <View style={isFullScreen ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, backgroundColor: '#FAFAFA' } : styles.mapContainer}>
                 {location ? (
                     <>
-                        <FreeMap 
+                        <MapView 
                             style={styles.map}
-                            region={mapRegion || (location ? {
+                            mapType={Platform.OS === 'android' ? 'none' : 'standard'}
+                            region={{
                                 latitude: location.latitude,
                                 longitude: location.longitude,
                                 latitudeDelta: (radius / 111.32) * 2.2, 
                                 longitudeDelta: (radius / 111.32) * 2.2,
-                            } : null)}
-                            onRegionChangeComplete={(reg) => setMapRegion(reg)}
-                            userLocation={location}
-                            circle={{
-                                latitude: location.latitude,
-                                longitude: location.longitude,
-                                radius: radius * 1000
                             }}
-                            markers={(selectedCategory === 'All' ? donations : donations.filter(d => d.category === selectedCategory)).map(item => ({
-                                ...item,
-                                latitude: item.location?.coordinates ? item.location.coordinates[1] : 0,
-                                longitude: item.location?.coordinates ? item.location.coordinates[0] : 0
-                            }))}
-                            onMarkerPress={(item) => setSelectedMarker(item)}
-                            polyline={routeCoords.length > 1 ? routeCoords : null}
-                        />
+                            onPress={() => setSelectedMarker(null)}
+                            zoomEnabled={true}
+                            scrollEnabled={true}
+                            pitchEnabled={true}
+                            rotateEnabled={true}
+                        >
+                            {Platform.OS === 'android' && (
+                                <UrlTile
+                                    urlTemplate="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                    maximumZ={19}
+                                    flipY={false}
+                                />
+                            )}
+                            <Marker coordinate={location}>
+                                <View style={mStyles.userMarkerContainer}>
+                                    <View style={mStyles.userMarkerPulse} />
+                                    <View style={mStyles.userMarkerDot} />
+                                </View>
+                            </Marker>
+
+                            <Circle
+                                center={location}
+                                radius={radius * 1000}
+                                fillColor="rgba(16, 185, 129, 0.1)"
+                                strokeColor="rgba(16, 185, 129, 0.4)"
+                                strokeWidth={2}
+                            />
+
+                            {/* Donation Markers */}
+                            {(selectedCategory === 'All' ? donations : donations.filter(d => d.category === selectedCategory)).map((item, index) => {
+                                if (!item.location || !item.location.coordinates) return null;
+                                
+                                // Add tiny jitter if multiple markers at same spot
+                                const lat = parseFloat(item.location.coordinates[1]) + (Math.random() - 0.5) * 0.0001;
+                                const lng = parseFloat(item.location.coordinates[0]) + (Math.random() - 0.5) * 0.0001;
+
+                                return (
+                                    <Marker 
+                                        key={item._id}
+                                        coordinate={{ latitude: lat, longitude: lng }}
+                                        onPress={(e) => { e.stopPropagation(); setSelectedMarker(item); }}
+                                    >
+                                        <View style={mStyles.donationMarker}>
+                                            <View style={mStyles.donationMarkerContent}>
+                                                <Ionicons name="gift" size={16} color="#FFF" />
+                                            </View>
+                                            <View style={mStyles.markerArrow} />
+                                        </View>
+                                    </Marker>
+                                );
+                            })}
+
+                            {routeCoords.length > 1 && (
+                                <>
+                                    <Polyline 
+                                        coordinates={routeCoords}
+                                        strokeColor="#3498DB"
+                                        strokeWidth={4}
+                                    />
+                                    <Marker coordinate={routeCoords[Math.floor(routeCoords.length / 2)]}>
+                                        <View style={styles.distanceBadge}>
+                                            <Text style={styles.distanceBadgeText}>{routeDistance || haversineDistance(location, selectedMarker.location) + ' km'}</Text>
+                                        </View>
+                                    </Marker>
+                                </>
+                            )}
+                        </MapView>
 
                         <View style={mStyles.mapControls}>
+                            <TouchableOpacity 
+                                style={mStyles.controlBtn} 
+                                onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
+                            >
+                                <MaterialCommunityIcons name={mapType === 'standard' ? "layers-outline" : "map-outline"} size={22} color="#1E293B" />
+                            </TouchableOpacity>
+
                             <TouchableOpacity 
                                 style={mStyles.controlBtn} 
                                 onPress={() => setIsFullScreen(!isFullScreen)}
@@ -397,6 +421,7 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
                                 <Ionicons name={isFullScreen ? "contract" : "expand"} size={22} color="#1E293B" />
                             </TouchableOpacity>
                         </View>
+
                         {isFullScreen && (
                             <TouchableOpacity 
                                 style={mStyles.backBtn}
