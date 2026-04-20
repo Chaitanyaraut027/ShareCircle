@@ -71,23 +71,55 @@ export default function LeafletMap({
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { width:100%; height:100%; overflow:hidden; background:#e8efeb; }
     #map { width:100vw; height:100vh; }
-    .leaflet-control-zoom { display:none; }
+    .leaflet-control-zoom {
+      border: none !important;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.18) !important;
+      border-radius: 10px !important;
+      overflow: hidden;
+    }
+    .leaflet-control-zoom a {
+      width: 36px !important;
+      height: 36px !important;
+      line-height: 36px !important;
+      font-size: 18px !important;
+      font-weight: 700 !important;
+      color: #2F7B5E !important;
+      background: white !important;
+    }
+    .leaflet-control-zoom a:hover { background: #f0faf5 !important; }
     .leaflet-control-attribution {
       font-size:8px !important; opacity:0.6;
       background:rgba(255,255,255,0.75) !important;
     }
-    /* Pulsing user dot */
-    .user-dot {
-      width:14px; height:14px;
-      background:#2F7B5E; border-radius:50%;
-      border:2.5px solid white;
-      box-shadow:0 0 0 0 rgba(47,123,94,0.4);
-      animation:pulse 2s infinite;
+    /* User location — red drop-pin with pulse ring */
+    .user-pin-wrap {
+      position: relative;
+      width: 20px;
+      height: 20px;
     }
-    @keyframes pulse {
-      0%   { box-shadow:0 0 0 0   rgba(47,123,94,0.4); }
-      70%  { box-shadow:0 0 0 12px rgba(47,123,94,0);   }
-      100% { box-shadow:0 0 0 0   rgba(47,123,94,0);    }
+    .user-pin-ring {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 42px; height: 42px;
+      border-radius: 50%;
+      background: rgba(220,38,38,0.15);
+      animation: ring-pulse 2s ease-out infinite;
+    }
+    .user-pin-dot {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 16px; height: 16px;
+      background: #DC2626;
+      border-radius: 50%;
+      border: 3px solid white;
+      box-shadow: 0 2px 8px rgba(220,38,38,0.6);
+      z-index: 2;
+    }
+    @keyframes ring-pulse {
+      0%   { transform: translate(-50%,-50%) scale(0.6); opacity: 1; }
+      100% { transform: translate(-50%,-50%) scale(2.0); opacity: 0; }
     }
     /* Gift marker */
     .gift-pin {
@@ -135,9 +167,12 @@ export default function LeafletMap({
   var z   = ${zoom};
 
   var map = L.map('map', {
-    zoomControl: false,
+    zoomControl: true,
     attributionControl: true,
-    tap: false,
+    tap: true,
+    touchZoom: true,
+    scrollWheelZoom: true,
+    doubleClickZoom: true,
     fadeAnimation: true,
     zoomAnimation: true
   }).setView([lat, lng], z);
@@ -150,12 +185,12 @@ export default function LeafletMap({
     crossOrigin: true
   }).addTo(map);
 
-  /* ── User location dot ── */
+  /* ── User location — bold red pin with pulsing ring ── */
   var uIcon = L.divIcon({
     className: '',
-    html: '<div class="user-dot"></div>',
-    iconSize: [14,14],
-    iconAnchor: [7,7]
+    html: '<div class="user-pin-wrap"><div class="user-pin-ring"></div><div class="user-pin-dot"></div></div>',
+    iconSize: [42, 42],
+    iconAnchor: [21, 21]
   });
   L.marker([lat, lng], { icon: uIcon, interactive: false, zIndexOffset: 2000 }).addTo(map);
 

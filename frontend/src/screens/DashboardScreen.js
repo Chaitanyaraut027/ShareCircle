@@ -451,7 +451,14 @@ const DashboardScreen = ({ navigation }) => {
                   <LeafletMap
                     latitude={location.latitude}
                     longitude={location.longitude}
-                    zoom={13}
+                    zoom={
+                      activeRadius <= 2  ? 14 :
+                      activeRadius <= 5  ? 13 :
+                      activeRadius <= 10 ? 12 :
+                      activeRadius <= 20 ? 11 :
+                      activeRadius <= 40 ? 10 :
+                      activeRadius <= 80 ? 9  : 8
+                    }
                     markers={(selectedCategory === 'All' ? nearbyItems : nearbyItems.filter(d => d.category === selectedCategory))}
                     radiusKm={activeRadius}
                     satellite={mapType === 'satellite'}
