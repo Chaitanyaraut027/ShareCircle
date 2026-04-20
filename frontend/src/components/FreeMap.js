@@ -44,19 +44,32 @@ const FreeMap = ({
                 }
 
                 .user-marker {
-                    width: 16px; height: 16px;
-                    background: #3B82F6;
-                    border: 2px solid #FFF;
+                    width: 32px; height: 32px;
+                    display: flex; justify-content: center; align-items: center;
+                }
+                .user-marker-pin {
+                    width: 28px; height: 28px;
+                    background: #EF4444;
+                    border: 3px solid #FFF;
+                    border-radius: 50% 50% 50% 0;
+                    transform: rotate(-45deg);
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+                }
+                .user-marker-pin::after {
+                    content: "";
+                    width: 10px; height: 10px;
+                    background: #FFF;
                     border-radius: 50%;
-                    box-shadow: 0 0 10px #3B82F6;
+                    position: absolute;
+                    top: 9px; left: 9px;
                 }
                 
                 .selected-marker {
-                    width: 20px; height: 20px;
-                    background: #EF4444;
-                    border: 2px solid #FFF;
+                    width: 24px; height: 24px;
+                    background: #F59E0B;
+                    border: 3px solid #FFF;
                     border-radius: 50%;
-                    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.4);
+                    box-shadow: 0 4px 8px rgba(245, 158, 11, 0.4);
                 }
 
                 .leaflet-control-zoom {
@@ -80,8 +93,13 @@ const FreeMap = ({
             <script>
                 var map = L.map('map', {
                     zoomControl: true,
-                    attributionControl: false
-                }).setView([${region?.latitude || 20}, ${region?.longitude || 78}], 13);
+                    attributionControl: false,
+                    dragging: true,
+                    touchZoom: true,
+                    scrollWheelZoom: true,
+                    doubleClickZoom: true,
+                    boxZoom: true
+                }).setView([${region?.latitude || 20}, ${region?.longitude || 78}], 11);
 
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
@@ -126,21 +144,21 @@ const FreeMap = ({
                     });
 
                     if (shouldFit && items.length > 0) {
-                        map.fitBounds(markersGroup.getBounds(), { padding: [50, 50] });
+                        map.fitBounds(markersGroup.getBounds(), { padding: [50, 50], maxZoom: 14 });
                     }
                 };
 
                 window.updateUserLocation = function(lat, lng) {
                     if (userMarker) map.removeLayer(userMarker);
                     userMarker = L.marker([lat, lng], {
-                        icon: L.divIcon({ className: '', html: '<div class="user-marker"></div>', iconSize: [16, 16], iconAnchor: [8, 8]})
+                        icon: L.divIcon({ className: '', html: '<div class="user-marker"><div class="user-marker-pin"></div></div>', iconSize: [32, 32], iconAnchor: [16, 30]})
                     }).addTo(map);
                 };
 
                 window.updateSelectedLocation = function(lat, lng) {
                     if (selectedMarker) map.removeLayer(selectedMarker);
                     selectedMarker = L.marker([lat, lng], {
-                        icon: L.divIcon({ className: '', html: '<div class="selected-marker"></div>', iconSize: [20, 20], iconAnchor: [10, 10]})
+                        icon: L.divIcon({ className: '', html: '<div class="selected-marker"></div>', iconSize: [24, 24], iconAnchor: [12, 12]})
                     }).addTo(map);
                 };
 
@@ -148,14 +166,15 @@ const FreeMap = ({
                     if (circleLayer) map.removeLayer(circleLayer);
                     if (!lat || !lng) return;
                     circleLayer = L.circle([lat, lng], {
-                        color: '#2F7B5E', fillColor: '#2F7B5E', fillOpacity: 0.15, weight: 2, radius: radius
+                        color: '#EF4444', fillColor: '#EF4444', fillOpacity: 0.1, weight: 2, radius: radius
                     }).addTo(map);
                 };
 
                 window.updatePolyline = function(coords) {
                     if (polyLineLayer) map.removeLayer(polyLineLayer);
                     if (!coords || coords.length < 2) return;
-                    polyLineLayer = L.polyline(coords.map(c => [c.latitude, c.longitude]), {color: '#3B82F6', weight: 5}).addTo(map);
+                    polyLineLayer = L.polyline(coords.map(c => [c.latitude, c.longitude]), {color: '#3B82F6', weight: 6, opacity: 0.8, lineCap: 'round'}).addTo(map);
+                    map.fitBounds(polyLineLayer.getBounds(), { padding: [40, 40] });
                 };
             </script>
         </body>

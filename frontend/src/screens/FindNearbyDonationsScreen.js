@@ -60,7 +60,7 @@ const haversineDistance = (coords1, coords2) => {
 const FindNearbyDonationsScreen = ({ route, navigation }) => {
     const type = 'donations';
     const [searchQuery, setSearchQuery] = useState('');
-    const [radius, setRadius] = useState(5);
+    const [radius, setRadius] = useState(50);
     const [donations, setDonations] = useState([]);
     const [location, setLocation] = useState(null);
     const [mapRegion, setMapRegion] = useState(null);
@@ -134,12 +134,46 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
 
             if (myLoc) {
                 setLocation(myLoc);
+                if (!mapRegion) setMapRegion(myLoc);
                 fetchDonations(searchQuery, radius, myLoc, currentUserId);
             } else {
                 alert('Could not determine location. Please update your profile.');
             }
         })();
     }, []);
+
+    useEffect(() => {
+        if (selectedMarker && location && selectedMarker.location?.coordinates) {
+            const getRoute = async () => {
+                const start = location;
+                const end = { latitude: selectedMarker.location.coordinates[1], longitude: selectedMarker.location.coordinates[0] };
+                try {
+                    const response = await fetch(`http://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson`);
+                    const data = await response.json();
+                    
+                    if (data.routes && data.routes.length > 0) {
+                        const coords = data.routes[0].geometry.coordinates.map(c => ({
+                            latitude: c[1],
+                            longitude: c[0]
+                        }));
+                        setRouteCoords(coords);
+                        setRouteDistance((data.routes[0].distance / 1000).toFixed(1) + ' KM');
+                    } else {
+                        setRouteCoords([start, end]);
+                        setRouteDistance(haversineDistance(start, selectedMarker.location) + ' km');
+                    }
+                } catch(e) {
+                    console.error("Routing error:", e);
+                    setRouteCoords([start, end]);
+                    setRouteDistance(haversineDistance(start, selectedMarker.location) + ' km');
+                }
+            };
+            getRoute();
+        } else {
+            setRouteCoords([]);
+            setRouteDistance(null);
+        }
+    }, [selectedMarker, location]);
 
     useEffect(() => {
         if (!location) return;
