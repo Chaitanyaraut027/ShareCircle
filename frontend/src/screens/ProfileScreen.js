@@ -181,15 +181,6 @@ const ProfileScreen = ({ navigation, route }) => {
                     setShowMap(false);
                     setIsFullScreen(true);
                     setIsAdjustMode(false);
-                    
-                    const region = {
-                        ...newCoords,
-                        latitudeDelta: 0.004,
-                        longitudeDelta: 0.004,
-                    };
-                    setTimeout(() => {
-                        fullMapRef.current?.animateToRegion(region, 1000);
-                    }, 500);
                 }
             } catch (error) {
                 console.error("Geocoding error:", error);

@@ -191,10 +191,21 @@ const DashboardScreen = ({ navigation }) => {
           // Fetch Nearby
           if (activeLocation) {
               const res = await getNearbyItems(activeLocation.longitude, activeLocation.latitude, 'donations', activeRadius, currentUser?._id);
-              if (res && res.success) {
+              if (res && res.success && Array.isArray(res.data)) {
                   // Sort by time: Older donations on top
-                  const sortedData = [...res.data].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-                  setNearbyItems(sortedData);
+                  try {
+                      const sortedData = [...res.data].sort((a, b) => {
+                          const dateA = a.createdAt ? new Date(a.createdAt) : 0;
+                          const dateB = b.createdAt ? new Date(b.createdAt) : 0;
+                          return dateA - dateB;
+                      });
+                      setNearbyItems(sortedData);
+                  } catch (sortError) {
+                      console.error("Sort error:", sortError);
+                      setNearbyItems(res.data);
+                  }
+              } else if (res && res.success) {
+                  setNearbyItems([]);
               }
           }
 
@@ -614,8 +625,10 @@ const DashboardScreen = ({ navigation }) => {
             </View>
         ) : (
             (selectedCategory === 'All' ? nearbyItems : nearbyItems.filter(d => d.category === selectedCategory)).map((item, index) => {
-                const creator = item.donor;
-                const minutesAgo = Math.max(0, Math.floor((new Date() - new Date(item.createdAt)) / 60000));
+                if (!item || !item.createdAt) return null;
+                const creator = item.donor || {};
+                const createdAt = item.createdAt ? new Date(item.createdAt) : new Date();
+                const minutesAgo = Math.max(0, Math.floor((new Date() - createdAt) / 60000));
                 let timeStr = `${minutesAgo} mins ago`;
                 if (minutesAgo > 60) timeStr = `${Math.floor(minutesAgo/60)} hrs ago`;
                 if (minutesAgo > 1440) timeStr = `${Math.floor(minutesAgo/1440)} days ago`;

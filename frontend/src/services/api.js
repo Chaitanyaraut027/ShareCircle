@@ -49,7 +49,7 @@ export const getNearbyItems = async (lng, lat, type, radius = 50, excludeUserId 
         return response.data;
     } catch (error) {
         console.error('API Error:', error);
-        return { success: false, data: [] };
+        return { success: false, data: [], message: 'Connection Error' };
     }
 };
 

@@ -143,14 +143,6 @@ const DonateFormScreen = ({ navigation }) => {
                     setCoords(newCoords);
                     setIsFullScreen(true);
                     setIsAdjustMode(false); 
-                    
-                    setTimeout(() => {
-                        fullMapRef.current?.animateToRegion({
-                            ...newCoords,
-                            latitudeDelta: 0.005,
-                            longitudeDelta: 0.005,
-                        }, 1000);
-                    }, 500);
                 }
             } catch (error) {
                 console.error("Geocoding error:", error);
