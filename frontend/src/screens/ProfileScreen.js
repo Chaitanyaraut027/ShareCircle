@@ -1,17 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StatusBar, StyleSheet, Modal, TextInput, ActivityIndicator, Alert, Image, Dimensions, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import MapView, { Marker } from 'react-native-maps';
-import { useRef } from 'react';
-import { COLORS } from '../utils/constants';
+import { COLORS, API_URL } from '../utils/constants';
 import { updateUserLocation, updateProfilePicture, loginUser } from '../services/api'; // Assuming we might need to refresh user data
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { API_URL } from '../utils/constants';
 import CustomToast from '../components/CustomToast';
+import FreeMap from '../components/FreeMap';
 
 
 const { width } = Dimensions.get('window');
@@ -523,20 +521,16 @@ const ProfileScreen = ({ navigation, route }) => {
                                 <Ionicons name="layers" size={24} color="#FFF" />
                             </TouchableOpacity>
                         </View>
-                        <MapView
-                            ref={fullMapRef}
-                            style={{ flex: 1 }}
-                            initialRegion={coords ? { ...coords, latitudeDelta: 0.005, longitudeDelta: 0.005 } : null}
-                            mapType={mapType}
-                        >
-                            {coords && (
-                                <Marker
-                                    coordinate={coords}
-                                    draggable
-                                    onDragEnd={handleMarkerDragEnd}
-                                />
-                            )}
-                        </MapView>
+                        <FreeMap
+                            style={styles.fullMap}
+                            region={coords ? { ...coords, latitudeDelta: 0.005, longitudeDelta: 0.005 } : null}
+                            onRegionChangeComplete={(newReg) => {
+                                if (isAdjustMode) {
+                                    setCoords({ latitude: newReg.latitude, longitude: newReg.longitude });
+                                }
+                            }}
+                            selectedLocation={coords}
+                        />
                         <View style={styles.mapActionsContainer}>
                             {isAdjustMode && (
                                 <View style={styles.adjustInstructionCard}>

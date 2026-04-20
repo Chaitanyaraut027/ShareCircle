@@ -2,11 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import MapView, { Marker, Callout, Circle, Polyline } from 'react-native-maps';
 import Slider from '@react-native-community/slider';
 import { getNearbyItems, getUserHistory, getNotificationCount } from '../services/api';
 import { COLORS, API_URL } from '../utils/constants';
 import { registerForPushNotificationsAsync, savePushToken, initNotifications } from '../services/notificationService';
+import FreeMap from '../components/FreeMap';
 import {
   View,
   Text,
@@ -448,73 +448,24 @@ const DashboardScreen = ({ navigation }) => {
                 <View style={isFullScreen ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, backgroundColor: '#FFF' } : { height: 320, borderRadius: 24, overflow: 'hidden', marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 }}>
               {location ? (
                 <View style={{ flex: 1 }}>
-                  <MapView
+                  <FreeMap
                     style={{ width: '100%', height: '100%' }}
-                    initialRegion={location}
-                    mapType={mapType}
-                    onPress={() => setSelectedMarker(null)}
-                    zoomEnabled={true}
-                    scrollEnabled={true}
-                    pitchEnabled={true}
-                    rotateEnabled={true}
-                  >
-                    {/* Pulsing User Marker */}
-                    <Marker coordinate={{ latitude: location.latitude, longitude: location.longitude }}>
-                        <View style={mStyles.userMarkerContainer}>
-                            <View style={mStyles.userMarkerPulse} />
-                            <View style={mStyles.userMarkerDot} />
-                        </View>
-                    </Marker>
-
-                    <Circle
-                        center={{ latitude: location.latitude, longitude: location.longitude }}
-                        radius={activeRadius * 1000}
-                        fillColor="rgba(47, 123, 94, 0.15)"
-                        strokeColor="rgba(47, 123, 94, 0.5)"
-                        strokeWidth={2}
-                    />
-
-                    {/* Donation Markers with filtering and jitter */}
-                    {(selectedCategory === 'All' ? nearbyItems : nearbyItems.filter(d => d.category === selectedCategory)).map(item => {
-                        if (!item.location || !item.location.coordinates) return null;
-                        
-                        // Add tiny jitter to prevent overlapping stack
-                        const lat = parseFloat(item.location.coordinates[1]) + (Math.random() - 0.5) * 0.0001;
-                        const lng = parseFloat(item.location.coordinates[0]) + (Math.random() - 0.5) * 0.0001;
-
-                        const distStr = calculateDistance(location, item.location);
-                        
-                        return (
-                            <Marker 
-                               key={item._id} 
-                               coordinate={{ latitude: lat, longitude: lng }} 
-                               onPress={(e) => { e.stopPropagation(); setSelectedMarker(item); }}
-                            >
-                               <View style={mStyles.donationMarker}>
-                                  <View style={mStyles.donationMarkerContent}>
-                                     <Ionicons name="gift" size={18} color="#FFF" />
-                                  </View>
-                                  <View style={mStyles.markerArrow} />
-                               </View>
-                            </Marker>
-                        );
-                    })}
-
-                    {routeCoords.length > 1 && (
-                        <>
-                            <Polyline 
-                                coordinates={routeCoords}
-                                strokeColor="#3498DB"
-                                strokeWidth={4}
-                            />
-                            <Marker coordinate={routeCoords[Math.floor(routeCoords.length / 2)]}>
-                                <View style={{ backgroundColor: '#1E293B', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, shadowColor: '#000', shadowOffset: {width:0, height:2}, shadowOpacity: 0.3, shadowRadius: 4, elevation: 4}}>
-                                     <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>{routeDistance || (selectedMarker ? calculateDistance(location, selectedMarker.location) : '')}</Text>
-                                </View>
-                            </Marker>
-                        </>
-                    )}
-                  </MapView>
+                    region={location}
+                    onRegionChangeComplete={(reg) => setLocation(reg)}
+                    userLocation={location}
+                    circle={{
+                        latitude: location.latitude,
+                        longitude: location.longitude,
+                        radius: activeRadius * 1000
+                    }}
+                    markers={(selectedCategory === 'All' ? nearbyItems : nearbyItems.filter(d => d.category === selectedCategory)).map(item => ({
+                        ...item,
+                        latitude: item.location?.coordinates ? item.location.coordinates[1] : 0,
+                        longitude: item.location?.coordinates ? item.location.coordinates[0] : 0
+                    }))}
+                    onMarkerPress={(item) => setSelectedMarker(item)}
+                    polyline={routeCoords.length > 1 ? routeCoords : null}
+                  />
 
                   {/* Floating Map Controls */}
                   <View style={mStyles.mapControls}>

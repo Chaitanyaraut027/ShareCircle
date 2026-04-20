@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Linking, Image, Dimensions, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
-import MapView, { Marker, Circle, Polyline } from 'react-native-maps';
+import { useState, useEffect, useRef } from 'react';
+import FreeMap from '../components/FreeMap';
 import * as Location from 'expo-location';
 import Slider from '@react-native-community/slider';
 import axios from 'axios';
@@ -330,75 +331,28 @@ const FindNearbyDonationsScreen = ({ route, navigation }) => {
             <View style={isFullScreen ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, backgroundColor: '#FAFAFA' } : styles.mapContainer}>
                 {location ? (
                     <>
-                        <MapView 
+                        <FreeMap 
                             style={styles.map}
-                            mapType={mapType}
                             region={{
                                 latitude: location.latitude,
                                 longitude: location.longitude,
                                 latitudeDelta: (radius / 111.32) * 2.2, 
                                 longitudeDelta: (radius / 111.32) * 2.2,
                             }}
-                            onPress={() => setSelectedMarker(null)}
-                            zoomEnabled={true}
-                            scrollEnabled={true}
-                            pitchEnabled={true}
-                            rotateEnabled={true}
-                        >
-                            <Marker coordinate={location}>
-                                <View style={mStyles.userMarkerContainer}>
-                                    <View style={mStyles.userMarkerPulse} />
-                                    <View style={mStyles.userMarkerDot} />
-                                </View>
-                            </Marker>
-
-                            <Circle
-                                center={location}
-                                radius={radius * 1000}
-                                fillColor="rgba(16, 185, 129, 0.1)"
-                                strokeColor="rgba(16, 185, 129, 0.4)"
-                                strokeWidth={2}
-                            />
-
-                            {/* Donation Markers */}
-                            {(selectedCategory === 'All' ? donations : donations.filter(d => d.category === selectedCategory)).map((item, index) => {
-                                if (!item.location || !item.location.coordinates) return null;
-                                
-                                // Add tiny jitter if multiple markers at same spot
-                                const lat = parseFloat(item.location.coordinates[1]) + (Math.random() - 0.5) * 0.0001;
-                                const lng = parseFloat(item.location.coordinates[0]) + (Math.random() - 0.5) * 0.0001;
-
-                                return (
-                                    <Marker 
-                                        key={item._id}
-                                        coordinate={{ latitude: lat, longitude: lng }}
-                                        onPress={(e) => { e.stopPropagation(); setSelectedMarker(item); }}
-                                    >
-                                        <View style={mStyles.donationMarker}>
-                                            <View style={mStyles.donationMarkerContent}>
-                                                <Ionicons name="gift" size={16} color="#FFF" />
-                                            </View>
-                                            <View style={mStyles.markerArrow} />
-                                        </View>
-                                    </Marker>
-                                );
-                            })}
-
-                            {routeCoords.length > 1 && (
-                                <>
-                                    <Polyline 
-                                        coordinates={routeCoords}
-                                        strokeColor="#3498DB"
-                                        strokeWidth={4}
-                                    />
-                                    <Marker coordinate={routeCoords[Math.floor(routeCoords.length / 2)]}>
-                                        <View style={styles.distanceBadge}>
-                                            <Text style={styles.distanceBadgeText}>{routeDistance || haversineDistance(location, selectedMarker.location) + ' km'}</Text>
-                                        </View>
-                                    </Marker>
-                                </>
-                            )}
-                        </MapView>
+                            userLocation={location}
+                            circle={{
+                                latitude: location.latitude,
+                                longitude: location.longitude,
+                                radius: radius * 1000
+                            }}
+                            markers={(selectedCategory === 'All' ? donations : donations.filter(d => d.category === selectedCategory)).map(item => ({
+                                ...item,
+                                latitude: item.location?.coordinates ? item.location.coordinates[1] : 0,
+                                longitude: item.location?.coordinates ? item.location.coordinates[0] : 0
+                            }))}
+                            onMarkerPress={(item) => setSelectedMarker(item)}
+                            polyline={routeCoords.length > 1 ? routeCoords : null}
+                        />
 
                         <View style={mStyles.mapControls}>
                             <TouchableOpacity 

@@ -5,13 +5,13 @@ import { useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import MapView, { Marker, Circle } from 'react-native-maps';
 import { useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
 import { COLORS, API_URL } from '../utils/constants';
 import CustomToast from '../components/CustomToast';
+import FreeMap from '../components/FreeMap';
 
 const { width } = Dimensions.get('window');
 
@@ -531,20 +531,16 @@ const DonateFormScreen = ({ navigation }) => {
                                     <Ionicons name="layers" size={24} color="#FFF" />
                                 </TouchableOpacity>
                             </View>
-                            <MapView
-                                ref={fullMapRef}
+                            <FreeMap
                                 style={{ flex: 1 }}
-                                initialRegion={coords ? { ...coords, latitudeDelta: 0.005, longitudeDelta: 0.005 } : null}
-                                mapType={mapType}
-                            >
-                                {coords && (
-                                    <Marker
-                                        coordinate={coords}
-                                        draggable
-                                        onDragEnd={handleMarkerDragEnd}
-                                    />
-                                )}
-                            </MapView>
+                                region={coords ? { ...coords, latitudeDelta: 0.005, longitudeDelta: 0.005 } : null}
+                                onRegionChangeComplete={(newReg) => {
+                                    if (isAdjustMode) {
+                                        setCoords({ latitude: newReg.latitude, longitude: newReg.longitude });
+                                    }
+                                }}
+                                selectedLocation={coords}
+                            />
                             <View style={styles.mapActionsContainer}>
                                 {isAdjustMode && (
                                     <View style={styles.adjustInstructionCard}>
