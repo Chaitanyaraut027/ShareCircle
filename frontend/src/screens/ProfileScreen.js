@@ -54,26 +54,26 @@ const ProfileScreen = ({ navigation, route }) => {
                 try {
                     currentUser = JSON.parse(storedUser);
                     setUser(currentUser);
-                    
-                    // Pre-fill form
+
+                    // Pre-fill form fields
                     setFullName(currentUser.fullName || '');
                     setMobileNumber(currentUser.mobileNumber || '');
-                        const extractedZip = currentUser.address.fullAddress?.match(/\b\d{6}\b/)?.[0] || '';
-                        if (currentUser.address.homeNo) setHomeNo(currentUser.address.homeNo);
-                        else setHomeNo('');
+
+                    if (currentUser.address) {
+                        setHomeNo(currentUser.address.homeNo || '');
                         setStreet(currentUser.address.street || '');
-                        setPincode(extractedZip);
-                        setPincode(extractedZip);
-                        if (currentUser.location?.coordinates) {
-                            const newCoords = {
-                                latitude: currentUser.location.coordinates[1],
-                                longitude: currentUser.location.coordinates[0]
-                            };
-                            setCoords(newCoords);
-                        }
+                        const zip = currentUser.address.fullAddress?.match(/\b\d{6}\b/)?.[0] || '';
+                        setPincode(zip);
+                    }
+
+                    if (currentUser.location?.coordinates) {
+                        setCoords({
+                            latitude: currentUser.location.coordinates[1],
+                            longitude: currentUser.location.coordinates[0],
+                        });
                     }
                 } catch (e) {
-                    console.error("Profile parsing error", e);
+                    console.error('Profile parsing error', e);
                     await AsyncStorage.clear();
                     navigation.reset({ index: 0, routes: [{ name: 'Welcome' }] });
                 }
