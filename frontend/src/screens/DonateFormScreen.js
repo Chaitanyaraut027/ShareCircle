@@ -5,7 +5,7 @@ import { useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import LeafletMap from '../components/LeafletMap';
+import LeafletMap from '../components/LeafletMap'; // kept for any future use
 import { useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
@@ -33,18 +33,12 @@ const DonateFormScreen = ({ navigation }) => {
     const [quantity, setQuantity] = useState('');
     
     // Address states
-    const [street, setStreet] = useState('');
-    const [landmark, setLandmark] = useState('');
-    const [pincode, setPincode] = useState('');
+    const [homeNo, setHomeNo] = useState('');    // Home/Flat/Building
+    const [street, setStreet] = useState('');    // Street/Locality/Area
+    const [pincode, setPincode] = useState('');   // Pincode
     const [coords, setCoords] = useState(null);
-    const [showMap, setShowMap] = useState(false);
-    const [mapType, setMapType] = useState('standard');
-    const [isFullScreen, setIsFullScreen] = useState(false);
     const [isGeocoding, setIsGeocoding] = useState(false);
-    const [isAdjustMode, setIsAdjustMode] = useState(false); // New state for adjust mode instructions
-    
-    const mapRef = useRef(null);
-    const fullMapRef = useRef(null);
+    const [locationPinned, setLocationPinned] = useState(false); // subtle success badge
 
     const [loading, setLoading] = useState(false);
     const [aiLoading, setAiLoading] = useState(false);
@@ -128,113 +122,80 @@ const DonateFormScreen = ({ navigation }) => {
     };
 
 
-    // Debounced geocoding for donation - Trigger when ALL THREE are ready
+    // Silent background geocoding — triggers when pincode reaches 6 digits
     useEffect(() => {
-        if (!landmark || !street || pincode.length !== 6) return;
-        
-        const delayDebounceFn = setTimeout(async () => {
+        // Need at least street or homeNo + a valid 6-digit pincode
+        if (pincode.length !== 6) { setLocationPinned(false); return; }
+        if (!street && !homeNo) return;
+
+        const timer = setTimeout(async () => {
             setIsGeocoding(true);
+            setLocationPinned(false);
             try {
-                const query = `${landmark}, ${street}, ${pincode}, India`;
+                // Build a precise query: "Building, Street, Pincode, India"
+                const parts = [homeNo, street, pincode, 'India'].filter(Boolean);
+                const query = parts.join(', ');
                 const results = await Location.geocodeAsync(query);
                 if (results && results.length > 0) {
-                    const { latitude, longitude } = results[0];
-                    const newCoords = { latitude, longitude };
-                    setCoords(newCoords);
-                    setIsFullScreen(true);
-                    setIsAdjustMode(false); 
-                    
-                    setTimeout(() => {
-                        fullMapRef.current?.animateToRegion({
-                            ...newCoords,
-                            latitudeDelta: 0.005,
-                            longitudeDelta: 0.005,
-                        }, 1000);
-                    }, 500);
+                    setCoords({ latitude: results[0].latitude, longitude: results[0].longitude });
+                    setLocationPinned(true);
+                    if (errors.coords) setErrors(prev => ({ ...prev, coords: false }));
                 }
-            } catch (error) {
-                console.error("Geocoding error:", error);
+            } catch (err) {
+                console.log('Geocoding error:', err);
             } finally {
                 setIsGeocoding(false);
             }
-        }, 1500);
+        }, 1200);
 
-        return () => clearTimeout(delayDebounceFn);
-    }, [landmark, street, pincode]);
+        return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [homeNo, street, pincode]);
 
-    const handleMarkerDragEnd = async (e) => {
-        const newCoords = e.nativeEvent.coordinate;
-        setCoords(newCoords);
-        try {
-            const reverseGeocode = await Location.reverseGeocodeAsync(newCoords);
-            if (reverseGeocode && reverseGeocode.length > 0) {
-                const addr = reverseGeocode[0];
-                const detailedAddr = [addr.name, addr.street, addr.district, addr.city].filter(Boolean).join(', ');
-                if (detailedAddr) {
-                    setStreet(addr.street || addr.district || '');
-                    setLandmark(detailedAddr);
-                }
-                if (addr.postalCode) setPincode(addr.postalCode);
-                showToast('Location updated! 📍');
-            }
-        } catch (error) {
-            console.error("Reverse geocoding error:", error);
-        }
-    };
+    // handleMarkerDragEnd removed — map picker no longer shown
 
     const handleGetCurrentLocation = async () => {
         try {
             const { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') {
-                showToast('Permission denied', 'error');
-                return;
-            }
+            if (status !== 'granted') { showToast('Permission denied', 'error'); return; }
 
-            const location = await Location.getCurrentPositionAsync({});
+            setIsGeocoding(true);
+            const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
             const { latitude, longitude } = location.coords;
             const newCoords = { latitude, longitude };
             setCoords(newCoords);
+            setLocationPinned(true);
 
             const reverse = await Location.reverseGeocodeAsync(newCoords);
             if (reverse && reverse.length > 0) {
                 const addr = reverse[0];
-                setStreet(addr.street || addr.district || '');
-                setLandmark(`${addr.name || ''} ${addr.subregion || ''}`.trim());
+                setHomeNo(addr.name || '');
+                setStreet([addr.street, addr.district].filter(Boolean).join(', '));
                 if (addr.postalCode) setPincode(addr.postalCode);
             }
-            setIsFullScreen(true);
+            showToast('Current location set! 📍');
         } catch (error) {
             showToast('Could not fetch location', 'error');
+        } finally {
+            setIsGeocoding(false);
         }
     };
 
     const handleUseSavedAddress = () => {
-        if (!user) {
-            showToast('Loading user profile...', 'info');
-            return;
-        }
+        if (!user) { showToast('Loading user profile...', 'info'); return; }
         if (user.address) {
+            setHomeNo(user.address.homeNo || '');
             setStreet(user.address.street || '');
-            setLandmark(user.address.fullAddress || '');
-            const extractedZip = user.address.fullAddress?.match(/\b\d{6}\b/)?.[0] || '';
-            if (extractedZip) setPincode(extractedZip);
-            
+            const zip = user.address.fullAddress?.match(/\b\d{6}\b/)?.[0] || '';
+            if (zip) setPincode(zip);
             if (user.location?.coordinates) {
-                setCoords({
-                    latitude: user.location.coordinates[1],
-                    longitude: user.location.coordinates[0]
-                });
-                setIsFullScreen(true);
+                setCoords({ latitude: user.location.coordinates[1], longitude: user.location.coordinates[0] });
+                setLocationPinned(true);
             }
             showToast('Profile address loaded! 🏠');
         } else {
             showToast('No saved address found', 'info');
         }
-    };
-
-    const confirmMapLocation = () => {
-        setIsFullScreen(false);
-        showToast('Location confirmed successfully! 📍');
     };
 
     const generateAIDescription = async () => {
@@ -268,14 +229,26 @@ const DonateFormScreen = ({ navigation }) => {
         if (!category) newErrors.category = true;
         if (category === 'Other' && !otherCategory) newErrors.otherCategory = true;
         if (!quantity) newErrors.quantity = true;
+        if (!homeNo) newErrors.homeNo = true;
         if (!street) newErrors.street = true;
-        if (!landmark) newErrors.landmark = true;
         if (!pincode || pincode.length !== 6) newErrors.pincode = true;
-        if (!coords) newErrors.coords = true;
+
+        // If no coords yet, try to geocode now
+        let finalCoords = coords;
+        if (!finalCoords && homeNo && street && pincode.length === 6) {
+            try {
+                const res = await Location.geocodeAsync(`${homeNo}, ${street}, ${pincode}, India`);
+                if (res && res.length > 0) {
+                    finalCoords = { latitude: res[0].latitude, longitude: res[0].longitude };
+                    setCoords(finalCoords);
+                }
+            } catch (_) {}
+        }
+        if (!finalCoords) newErrors.coords = true;
 
         if (Object.keys(newErrors).length > 0) {
             setErrors(newErrors);
-            showToast('Please fill all required fields highlighted in red.', 'error');
+            showToast('Please fill all required fields.', 'error');
             return;
         }
 
@@ -293,11 +266,11 @@ const DonateFormScreen = ({ navigation }) => {
             formData.append('description', description);
             formData.append('category', category === 'Other' ? otherCategory : category);
             formData.append('quantity', quantity);
-            formData.append('homeNo', landmark);
+            formData.append('homeNo', homeNo);
             formData.append('street', street);
-            formData.append('fullAddress', `${landmark}, ${street}, ${pincode}`);
-            formData.append('latitude', coords.latitude.toString());
-            formData.append('longitude', coords.longitude.toString());
+            formData.append('fullAddress', `${homeNo}, ${street}, ${pincode}`);
+            formData.append('latitude', finalCoords.latitude.toString());
+            formData.append('longitude', finalCoords.longitude.toString());
             formData.append('donorId', user._id);
             
             const filename = imageUri.split('/').pop();
@@ -446,11 +419,17 @@ const DonateFormScreen = ({ navigation }) => {
                                 />
                             </View>
 
-                                <View style={[styles.addressSection, errors.coords && { borderColor: '#EF4444', borderWidth: 2 }]}>
-                                    <Text style={[styles.sectionTitle, errors.coords && { color: '#EF4444' }]}>Pickup Location {errors.coords && '(Please Confirm Point on Map)'}</Text>
+                            <View style={[styles.addressSection, errors.coords && { borderColor: '#EF4444', borderWidth: 2 }]}>
+                                    <Text style={[styles.sectionTitle, errors.coords && { color: '#EF4444' }]}>
+                                        Pickup Location
+                                    </Text>
+                                    <Text style={styles.addressHint}>
+                                        Enter address below — location is pinned automatically on the map.
+                                    </Text>
                                     
+                                    {/* Quick-fill row */}
                                     <View style={styles.locationSourceRow}>
-                                        <TouchableOpacity style={styles.sourceCard} onPress={handleGetCurrentLocation}>
+                                        <TouchableOpacity style={styles.sourceCard} onPress={handleGetCurrentLocation} disabled={isGeocoding}>
                                             <View style={[styles.sourceIcon, { backgroundColor: '#F0FDF4' }]}>
                                                 <MaterialCommunityIcons name="target" size={24} color="#10B981" />
                                             </View>
@@ -464,43 +443,51 @@ const DonateFormScreen = ({ navigation }) => {
                                             <Text style={styles.sourceText}>Saved Address</Text>
                                         </TouchableOpacity>
                                     </View>
-    
+
+                                    {/* Field 1 — Home / Building */}
+                                    <View style={styles.inputGroup}>
+                                        <Text style={styles.label}>Home / Flat / Building *</Text>
+                                        <TextInput
+                                            style={[styles.input, errors.homeNo && styles.errorInput]}
+                                            placeholder="KITS Boys Hostel"
+                                            placeholderTextColor="#94A3B8"
+                                            value={homeNo}
+                                            onChangeText={(t) => { setHomeNo(t); if (errors.homeNo) setErrors(e => ({ ...e, homeNo: false })); }}
+                                        />
+                                    </View>
+
+                                    {/* Field 2 — Street / Locality */}
                                     <View style={styles.inputGroup}>
                                         <Text style={styles.label}>Street / Locality / Area *</Text>
-                                        <TextInput 
-                                            style={[styles.input, errors.street && styles.errorInput]} 
-                                            placeholder="e.g. MG Road, Hiranandani"
+                                        <TextInput
+                                            style={[styles.input, errors.street && styles.errorInput]}
+                                            placeholder="KITS College of Engineering, Gokul Shirgoan Area"
                                             placeholderTextColor="#94A3B8"
-                                            value={street} 
-                                            onChangeText={(text) => { setStreet(text); if(errors.street) setErrors({...errors, street: false}); }}
+                                            value={street}
+                                            onChangeText={(t) => { setStreet(t); if (errors.street) setErrors(e => ({ ...e, street: false })); }}
                                         />
                                     </View>
-    
-                                    <View style={styles.inputGroup}>
-                                        <Text style={styles.label}>House No / Building / Floor *</Text>
-                                        <TextInput 
-                                            style={[styles.input, styles.textAreaSmall, errors.landmark && styles.errorInput]} 
-                                            placeholder="e.g. Flat 402, Shivam Apts"
-                                            placeholderTextColor="#94A3B8"
-                                            multiline
-                                            value={landmark} 
-                                            onChangeText={(text) => { setLandmark(text); if(errors.landmark) setErrors({...errors, landmark: false}); }}
-                                        />
-                                    </View>
-    
+
+                                    {/* Field 3 — Pincode */}
                                     <View style={styles.inputGroup}>
                                         <View style={styles.labelRow}>
-                                            <Text style={styles.label}>Pincode / Zip Code *</Text>
+                                            <Text style={styles.label}>Pincode *</Text>
                                             {isGeocoding && <ActivityIndicator size="small" color="#10B981" />}
+                                            {locationPinned && !isGeocoding && (
+                                                <View style={styles.pinnedBadge}>
+                                                    <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                                                    <Text style={styles.pinnedText}>Location pinned</Text>
+                                                </View>
+                                            )}
                                         </View>
-                                        <TextInput 
-                                            style={[styles.input, (errors.pincode) && styles.errorInput]} 
-                                            placeholder="Enter 6-digit pincode"
+                                        <TextInput
+                                            style={[styles.input, errors.pincode && styles.errorInput]}
+                                            placeholder="e.g. 416209"
                                             placeholderTextColor="#94A3B8"
                                             keyboardType="numeric"
                                             maxLength={6}
-                                            value={pincode} 
-                                            onChangeText={(text) => { setPincode(text); if(errors.pincode) setErrors({...errors, pincode: false}); }}
+                                            value={pincode}
+                                            onChangeText={(t) => { setPincode(t); if (errors.pincode) setErrors(e => ({ ...e, pincode: false })); }}
                                         />
                                     </View>
                                 </View>
@@ -517,71 +504,10 @@ const DonateFormScreen = ({ navigation }) => {
                         <View style={{ height: 100 }} />
                     </ScrollView>
 
-                    <Modal visible={isFullScreen} animationType="fade">
-                        <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
-                            <View style={styles.fullMapHeader}>
-                                <TouchableOpacity style={styles.closeFullMap} onPress={() => setIsFullScreen(false)}>
-                                    <Ionicons name="arrow-back" size={28} color="#FFF" />
-                                </TouchableOpacity>
-                                <Text style={styles.fullMapTitle}>Adjust Location</Text>
-                                <TouchableOpacity 
-                                    style={styles.fullMapTypeBtn}
-                                    onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
-                                >
-                                    <Ionicons name="layers" size={24} color="#FFF" />
-                                </TouchableOpacity>
-                            </View>
-                            <LeafletMap
-                                style={{ flex: 1 }}
-                                latitude={coords ? coords.latitude : 20.5937}
-                                longitude={coords ? coords.longitude : 78.9629}
-                                zoom={coords ? 15 : 5}
-                                draggable={true}
-                                onCoordChange={async (newCoords) => {
-                                    setCoords(newCoords);
-                                    try {
-                                        const reverseGeocode = await Location.reverseGeocodeAsync(newCoords);
-                                        if (reverseGeocode && reverseGeocode.length > 0) {
-                                            const addr = reverseGeocode[0];
-                                            const detailedAddr = [addr.name, addr.street, addr.district, addr.city].filter(Boolean).join(', ');
-                                            if (detailedAddr) {
-                                                setStreet(addr.street || addr.district || '');
-                                                setLandmark(detailedAddr);
-                                            }
-                                            if (addr.postalCode) setPincode(addr.postalCode);
-                                        }
-                                    } catch (e) { console.log('Reverse geocode error', e); }
-                                }}
-                            />
-                            <View style={styles.mapActionsContainer}>
-                                {isAdjustMode && (
-                                    <View style={styles.adjustInstructionCard}>
-                                        <Ionicons name="hand-right" size={20} color="#8B5CF6" />
-                                        <Text style={styles.adjustInstructionText}>Drag the pin to fix the exact address point 📍</Text>
-                                    </View>
-                                )}
-                                
-                                <View style={styles.mapActionsRow}>
-                                    <TouchableOpacity 
-                                        style={[styles.mapActionBtn, styles.adjustBtn, isAdjustMode && styles.activeAdjustBtn]} 
-                                        onPress={() => setIsAdjustMode(!isAdjustMode)}
-                                    >
-                                        <Ionicons name={isAdjustMode ? "checkmark" : "move"} size={22} color={isAdjustMode ? "#FFF" : "#64748B"} />
-                                        <Text style={[styles.mapActionText, isAdjustMode && { color: '#FFF' }]}>{isAdjustMode ? 'Set Point' : 'Adjust Map'}</Text>
-                                    </TouchableOpacity>
-
-                                    <TouchableOpacity style={[styles.mapActionBtn, styles.confirmBtn]} onPress={confirmMapLocation}>
-                                        <Ionicons name="checkmark-circle" size={22} color="#FFF" />
-                                        <Text style={[styles.mapActionText, { color: '#FFF' }]}>Confirm Address</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        </SafeAreaView>
-                    </Modal>
-                </View>
-            </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
-    </SafeAreaView>
+                    </View>
+                </TouchableWithoutFeedback>
+            </KeyboardAvoidingView>
+        </SafeAreaView>
     );
 };
 
@@ -655,7 +581,10 @@ const styles = StyleSheet.create({
     // Error Styles
     errorInput: { borderColor: '#EF4444', borderWidth: 1.5, backgroundColor: '#FFF5F5' },
     errorBorderImage: { borderColor: '#EF4444', borderWidth: 2, padding: 5, borderRadius: 30 },
-    sectionTitle: { fontSize: 18, fontWeight: '900', color: '#1E293B', marginBottom: 20 },
+    pinnedBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0FDF4', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+    pinnedText: { fontSize: 11, fontWeight: '700', color: '#10B981', marginLeft: 4 },
+    addressHint: { fontSize: 12, color: '#94A3B8', marginBottom: 16, fontStyle: 'italic' },
+    sectionTitle: { fontSize: 18, fontWeight: '900', color: '#1E293B', marginBottom: 8 },
     textAreaSmall: { minHeight: 60, textAlignVertical: 'top' },
     subLabel: { fontSize: 13, fontWeight: '700', color: '#64748B', marginBottom: 8 },
 });

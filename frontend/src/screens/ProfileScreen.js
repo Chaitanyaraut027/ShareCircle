@@ -27,18 +27,12 @@ const ProfileScreen = ({ navigation, route }) => {
     // Form States
     const [fullName, setFullName] = useState('');
     const [mobileNumber, setMobileNumber] = useState('');
-    const [street, setStreet] = useState('');
-    const [landmark, setLandmark] = useState('');
-    const [pincode, setPincode] = useState('');
+    const [homeNo, setHomeNo] = useState('');    // Home/Flat/Building
+    const [street, setStreet] = useState('');    // Street/Locality/Area
+    const [pincode, setPincode] = useState('');   // Pincode
     const [coords, setCoords] = useState(null);
-    const [showMap, setShowMap] = useState(false);
-    const [mapType, setMapType] = useState('standard');
-    const [isFullScreen, setIsFullScreen] = useState(false);
     const [isGeocoding, setIsGeocoding] = useState(false);
-    const [isAdjustMode, setIsAdjustMode] = useState(false);
-    
-    const mapRef = useRef(null);
-    const fullMapRef = useRef(null);
+    const [locationPinned, setLocationPinned] = useState(false);
 
     // Toast setup
     const [toastVisible, setToastVisible] = useState(false);
@@ -64,10 +58,11 @@ const ProfileScreen = ({ navigation, route }) => {
                     // Pre-fill form
                     setFullName(currentUser.fullName || '');
                     setMobileNumber(currentUser.mobileNumber || '');
-                    if (currentUser.address) {
-                        setStreet(currentUser.address.street || '');
-                        setLandmark(currentUser.address.fullAddress || '');
                         const extractedZip = currentUser.address.fullAddress?.match(/\b\d{6}\b/)?.[0] || '';
+                        if (currentUser.address.homeNo) setHomeNo(currentUser.address.homeNo);
+                        else setHomeNo('');
+                        setStreet(currentUser.address.street || '');
+                        setPincode(extractedZip);
                         setPincode(extractedZip);
                         if (currentUser.location?.coordinates) {
                             const newCoords = {
@@ -143,98 +138,57 @@ const ProfileScreen = ({ navigation, route }) => {
     const handleGetLiveLocation = async () => {
         try {
             const { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') {
-                showToast('Permission denied', 'error');
-                return;
-            }
-            const location = await Location.getCurrentPositionAsync({});
+            if (status !== 'granted') { showToast('Permission denied', 'error'); return; }
+            setIsGeocoding(true);
+            const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
             const { latitude, longitude } = location.coords;
             setCoords({ latitude, longitude });
+            setLocationPinned(true);
             
             const reverse = await Location.reverseGeocodeAsync({ latitude, longitude });
             if (reverse && reverse.length > 0) {
                 const addr = reverse[0];
-                setStreet(addr.street || addr.district || '');
-                setLandmark(`${addr.name || ''} ${addr.subregion || ''}`.trim());
+                setHomeNo(addr.name || '');
+                setStreet([addr.street, addr.district].filter(Boolean).join(', '));
                 if (addr.postalCode) setPincode(addr.postalCode);
                 showToast('Live location fetched! 📍');
             }
-            setIsFullScreen(true);
         } catch (error) {
             showToast('Could not fetch location', 'error');
+        } finally {
+            setIsGeocoding(false);
         }
     };
 
+    // Silent background geocoding — triggers when pincode reaches 6 digits
     useEffect(() => {
-        const delayDebounceFn = setTimeout(async () => {
+        if (pincode.length !== 6) { setLocationPinned(false); return; }
+        if (!street && !homeNo) return;
+
+        const timer = setTimeout(async () => {
             const { status } = await Location.getForegroundPermissionsAsync();
             if (status !== 'granted') return;
-            
-            if (!landmark || !street || pincode.length !== 6) return;
-            
             setIsGeocoding(true);
+            setLocationPinned(false);
             try {
-                const query = `${landmark}, ${street}, ${pincode}, India`;
-                const results = await Location.geocodeAsync(query);
+                const parts = [homeNo, street, pincode, 'India'].filter(Boolean);
+                const results = await Location.geocodeAsync(parts.join(', '));
                 if (results && results.length > 0) {
-                    const { latitude, longitude } = results[0];
-                    const newCoords = { latitude, longitude };
-                    setCoords(newCoords);
-                    setShowMap(false);
-                    setIsFullScreen(true);
-                    setIsAdjustMode(false);
-                    
-                    const region = {
-                        ...newCoords,
-                        latitudeDelta: 0.004,
-                        longitudeDelta: 0.004,
-                    };
-                    setTimeout(() => {
-                        fullMapRef.current?.animateToRegion(region, 1000);
-                    }, 500);
+                    setCoords({ latitude: results[0].latitude, longitude: results[0].longitude });
+                    setLocationPinned(true);
                 }
-            } catch (error) {
-                console.error("Geocoding error:", error);
+            } catch (err) {
+                console.log('Geocoding error:', err);
             } finally {
                 setIsGeocoding(false);
             }
-        }, 1500);
+        }, 1200);
 
-        return () => clearTimeout(delayDebounceFn);
-    }, [landmark, street, pincode, showEditModal]);
+        return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [homeNo, street, pincode, showEditModal]);
 
-    const handleMarkerDragEnd = async (newCoords) => {
-        // newCoords is {latitude, longitude} from LeafletMap onCoordChange
-        setCoords(newCoords);
-        try {
-            const reverseGeocode = await Location.reverseGeocodeAsync(newCoords);
-            if (reverseGeocode && reverseGeocode.length > 0) {
-                const addr = reverseGeocode[0];
-                const detailedAddr = [addr.name, addr.street, addr.district, addr.city].filter(Boolean).join(', ');
-                if (detailedAddr) {
-                    setStreet(addr.street || addr.district || '');
-                    setLandmark(detailedAddr);
-                }
-                if (addr.postalCode) setPincode(addr.postalCode);
-                showToast('Location updated! 📍');
-            }
-        } catch (error) {
-            console.error("Reverse geocoding error:", error);
-        }
-    };
-
-    async function handleAddressFocus() {
-        try {
-            const { status } = await Location.requestForegroundPermissionsAsync();
-        } catch (err) {
-            console.warn("Permission request error", err);
-        }
-    }
-
-    const confirmMapLocation = () => {
-        setIsFullScreen(false);
-        showToast('Address point confirmed! 📍');
-    };
+    // Map picker removed — address fields geocode silently
 
     const handleSaveChanges = async () => {
         if (!fullName || !mobileNumber) {
@@ -246,24 +200,21 @@ const ProfileScreen = ({ navigation, route }) => {
             let lat = coords?.latitude || user.location?.coordinates?.[1] || 0;
             let lon = coords?.longitude || user.location?.coordinates?.[0] || 0;
 
-            if (!coords && landmark && landmark !== user.address?.fullAddress) {
+            // If no coords, geocode from address fields
+            if (!coords && (homeNo || street) && pincode.length === 6) {
                 try {
-                    const geo = await Location.geocodeAsync(landmark);
-                    if (geo.length > 0) {
-                        lat = geo[0].latitude;
-                        lon = geo[0].longitude;
-                    }
-                } catch (e) {
-                    console.warn("Geocoding failed", e);
-                }
+                    const geo = await Location.geocodeAsync(`${homeNo}, ${street}, ${pincode}, India`);
+                    if (geo.length > 0) { lat = geo[0].latitude; lon = geo[0].longitude; }
+                } catch (e) { console.warn('Geocoding failed', e); }
             }
             
             const response = await axios.put(`${API_URL}/auth/update-profile`, {
                 userId: user._id,
                 fullName,
                 mobileNumber,
+                homeNo,
                 street,
-                landmark,
+                landmark: `${homeNo}, ${street}`,
                 latitude: lat,
                 longitude: lon
             });
@@ -455,45 +406,52 @@ const ProfileScreen = ({ navigation, route }) => {
                                     </TouchableOpacity>
                                 </View>
 
-                                {/* Street */}
+                                {/* Home / Building */}
+                                <View style={styles.inputGroup}>
+                                    <Text style={styles.inputLabel}>Home / Flat / Building *</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        value={homeNo}
+                                        onChangeText={setHomeNo}
+                                        placeholder="KITS Boys Hostel"
+                                        placeholderTextColor="#94A3B8"
+                                    />
+                                </View>
+
+                                {/* Street / Locality */}
                                 <View style={styles.inputGroup}>
                                     <Text style={styles.inputLabel}>Street / Locality / Area *</Text>
                                     <TextInput
                                         style={styles.input}
                                         value={street}
                                         onChangeText={setStreet}
-                                        placeholder="e.g. MG Road, Locality Name"
-                                    />
-                                </View>
-
-                                {/* House No */}
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>House No / Building / Floor *</Text>
-                                    <TextInput
-                                        style={[styles.input, styles.textArea]}
-                                        value={landmark}
-                                        onChangeText={setLandmark}
-                                        placeholder="e.g. Flat 402, Shivam Apts"
-                                        multiline
-                                        numberOfLines={3}
+                                        placeholder="KITS College of Engineering, Gokul Shirgoan Area"
+                                        placeholderTextColor="#94A3B8"
                                     />
                                 </View>
 
                                 {/* Pincode */}
                                 <View style={styles.inputGroup}>
                                     <View style={styles.labelRow}>
-                                        <Text style={styles.inputLabel}>Pincode / Zip Code *</Text>
+                                        <Text style={styles.inputLabel}>Pincode *</Text>
                                         {isGeocoding && <ActivityIndicator size="small" color="#10B981" />}
+                                        {locationPinned && !isGeocoding && (
+                                            <View style={styles.pinnedBadge}>
+                                                <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                                                <Text style={styles.pinnedText}>Location pinned</Text>
+                                            </View>
+                                        )}
                                     </View>
                                     <TextInput
                                         style={styles.input}
                                         value={pincode}
                                         onChangeText={setPincode}
-                                        placeholder="6-digit pincode"
+                                        placeholder="e.g. 416209"
+                                        placeholderTextColor="#94A3B8"
                                         keyboardType="numeric"
                                         maxLength={6}
                                     />
-                                    <Text style={styles.helperText}>Map will open automatically after filling all 3 fields 📍</Text>
+                                    <Text style={styles.helperText}>Location is pinned automatically when you fill all fields 📍</Text>
                                 </View>
 
                                 {loading ? (
@@ -507,55 +465,6 @@ const ProfileScreen = ({ navigation, route }) => {
                         </View>
                     </View>
                 </TouchableWithoutFeedback>
-
-                {/* Fullscreen Map Modal */}
-                <Modal visible={isFullScreen} animationType="fade">
-                    <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
-                        <View style={styles.fullMapHeader}>
-                            <TouchableOpacity style={styles.closeFullMap} onPress={() => setIsFullScreen(false)}>
-                                <Ionicons name="arrow-back" size={28} color="#FFF" />
-                            </TouchableOpacity>
-                            <Text style={styles.fullMapTitle}>Adjust Location</Text>
-                            <TouchableOpacity 
-                                style={styles.fullMapTypeBtn}
-                                onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
-                            >
-                                <Ionicons name="layers" size={24} color="#FFF" />
-                            </TouchableOpacity>
-                        </View>
-                        <LeafletMap
-                            style={{ flex: 1 }}
-                            latitude={coords ? coords.latitude : 20.5937}
-                            longitude={coords ? coords.longitude : 78.9629}
-                            zoom={coords ? 15 : 5}
-                            draggable={true}
-                            onCoordChange={handleMarkerDragEnd}
-                        />
-                        <View style={styles.mapActionsContainer}>
-                            {isAdjustMode && (
-                                <View style={styles.adjustInstructionCard}>
-                                    <Ionicons name="hand-right" size={20} color="#8B5CF6" />
-                                    <Text style={styles.adjustInstructionText}>Drag the pin to fix the exact address point 📍</Text>
-                                </View>
-                            )}
-                            
-                            <View style={styles.mapActionsRow}>
-                                <TouchableOpacity 
-                                    style={[styles.mapActionBtn, styles.adjustBtn, isAdjustMode && styles.activeAdjustBtn]} 
-                                    onPress={() => setIsAdjustMode(!isAdjustMode)}
-                                >
-                                    <Ionicons name={isAdjustMode ? "checkmark" : "move"} size={22} color={isAdjustMode ? "#FFF" : "#64748B"} />
-                                    <Text style={[styles.mapActionText, isAdjustMode && { color: '#FFF' }]}>{isAdjustMode ? 'Set Point' : 'Adjust Map'}</Text>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity style={[styles.mapActionBtn, styles.confirmBtn]} onPress={confirmMapLocation}>
-                                    <Ionicons name="checkmark-circle" size={22} color="#FFF" />
-                                    <Text style={[styles.mapActionText, { color: '#FFF' }]}>Confirm Address</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    </SafeAreaView>
-                </Modal>
             </Modal>
 
             {/* Image Full View */}
@@ -894,6 +803,8 @@ const styles = StyleSheet.create({
     closeFullMap: { padding: 5 },
     fullMapTypeBtn: { padding: 5 },
     helperText: { color: '#64748B', fontSize: 11, fontStyle: 'italic', marginTop: 6, textAlign: 'right', marginBottom: 10 },
+    pinnedBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0FDF4', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+    pinnedText: { fontSize: 11, fontWeight: '700', color: '#10B981', marginLeft: 4 },
 });
 
 export default ProfileScreen;
