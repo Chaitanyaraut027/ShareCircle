@@ -97,7 +97,7 @@ const DashboardScreen = ({ navigation }) => {
          const start = location;
          const end = { latitude: selectedMarker.location.coordinates[1], longitude: selectedMarker.location.coordinates[0] };
          try {
-             const response = await fetch(`http://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson`);
+             const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson`);
              const data = await response.json();
              
              if (data.routes && data.routes.length > 0) {
