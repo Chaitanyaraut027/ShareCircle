@@ -12,7 +12,7 @@ export const createDonation = async (req, res) => {
         const { donorId, title, description, category, quantity, homeNo, street, fullAddress, longitude, latitude } = req.body;
         
         // Build the pickupAddress string from individual fields
-        const pickupAddress = fullAddress || [homeNo, street].filter(Boolean).join(', ') || '';
+        const pickupAddress = [homeNo, street, fullAddress].filter(Boolean).join(', ');
 
         let imageUrl = '';
 

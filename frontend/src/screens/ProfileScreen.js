@@ -29,7 +29,7 @@ const ProfileScreen = ({ navigation, route }) => {
     const [mobileNumber, setMobileNumber] = useState('');
     const [homeNo, setHomeNo] = useState('');    // Home/Flat/Building
     const [street, setStreet] = useState('');    // Street/Locality/Area
-    const [pincode, setPincode] = useState('');   // Pincode
+    const [fullAddress, setFullAddress] = useState(''); // Full address / Landmark
     const [coords, setCoords] = useState(null);
     const [isGeocoding, setIsGeocoding] = useState(false);
     const [locationPinned, setLocationPinned] = useState(false);
@@ -62,8 +62,8 @@ const ProfileScreen = ({ navigation, route }) => {
                     if (currentUser.address) {
                         setHomeNo(currentUser.address.homeNo || '');
                         setStreet(currentUser.address.street || '');
-                        const zip = currentUser.address.fullAddress?.match(/\b\d{6}\b/)?.[0] || '';
-                        setPincode(zip);
+                        const landmark = currentUser.address.fullAddress || currentUser.address.landmark || '';
+                        setFullAddress(landmark);
                     }
 
                     if (currentUser.location?.coordinates) {
@@ -150,7 +150,9 @@ const ProfileScreen = ({ navigation, route }) => {
                 const addr = reverse[0];
                 setHomeNo(addr.name || '');
                 setStreet([addr.street, addr.district].filter(Boolean).join(', '));
-                if (addr.postalCode) setPincode(addr.postalCode);
+                // Pre-fill what we can
+                const landmark = [addr.subregion || addr.city, addr.region].filter(Boolean).join(', ');
+                setFullAddress(landmark);
                 showToast('Live location fetched! 📍');
             }
         } catch (error) {
@@ -160,10 +162,9 @@ const ProfileScreen = ({ navigation, route }) => {
         }
     };
 
-    // Silent background geocoding — triggers when pincode reaches 6 digits
+    // Silent background geocoding — triggers when all fields are present
     useEffect(() => {
-        if (pincode.length !== 6) { setLocationPinned(false); return; }
-        if (!street && !homeNo) return;
+        if (!street || !homeNo || !fullAddress) { setLocationPinned(false); return; }
 
         const timer = setTimeout(async () => {
             const { status } = await Location.getForegroundPermissionsAsync();
@@ -171,7 +172,7 @@ const ProfileScreen = ({ navigation, route }) => {
             setIsGeocoding(true);
             setLocationPinned(false);
             try {
-                const parts = [homeNo, street, pincode, 'India'].filter(Boolean);
+                const parts = [homeNo, street, fullAddress, 'India'].filter(Boolean);
                 const results = await Location.geocodeAsync(parts.join(', '));
                 if (results && results.length > 0) {
                     setCoords({ latitude: results[0].latitude, longitude: results[0].longitude });
@@ -186,7 +187,7 @@ const ProfileScreen = ({ navigation, route }) => {
 
         return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [homeNo, street, pincode, showEditModal]);
+    }, [homeNo, street, fullAddress, showEditModal]);
 
     // Map picker removed — address fields geocode silently
 
@@ -201,9 +202,9 @@ const ProfileScreen = ({ navigation, route }) => {
             let lon = coords?.longitude || user.location?.coordinates?.[0] || 0;
 
             // If no coords, geocode from address fields
-            if (!coords && (homeNo || street) && pincode.length === 6) {
+            if (!coords && homeNo && street && fullAddress) {
                 try {
-                    const geo = await Location.geocodeAsync(`${homeNo}, ${street}, ${pincode}, India`);
+                    const geo = await Location.geocodeAsync(`${homeNo}, ${street}, ${fullAddress}, India`);
                     if (geo.length > 0) { lat = geo[0].latitude; lon = geo[0].longitude; }
                 } catch (e) { console.warn('Geocoding failed', e); }
             }
@@ -214,7 +215,8 @@ const ProfileScreen = ({ navigation, route }) => {
                 mobileNumber,
                 homeNo,
                 street,
-                landmark: `${homeNo}, ${street}`,
+                fullAddress,
+                landmark: fullAddress,
                 latitude: lat,
                 longitude: lon
             });
@@ -430,10 +432,10 @@ const ProfileScreen = ({ navigation, route }) => {
                                     />
                                 </View>
 
-                                {/* Pincode */}
+                                {/* Full Address / Landmark */}
                                 <View style={styles.inputGroup}>
                                     <View style={styles.labelRow}>
-                                        <Text style={styles.inputLabel}>Pincode *</Text>
+                                        <Text style={styles.inputLabel}>Full Address / Landmark *</Text>
                                         {isGeocoding && <ActivityIndicator size="small" color="#10B981" />}
                                         {locationPinned && !isGeocoding && (
                                             <View style={styles.pinnedBadge}>
@@ -444,14 +446,11 @@ const ProfileScreen = ({ navigation, route }) => {
                                     </View>
                                     <TextInput
                                         style={styles.input}
-                                        value={pincode}
-                                        onChangeText={setPincode}
-                                        placeholder="e.g. 416209"
+                                        value={fullAddress}
+                                        onChangeText={setFullAddress}
+                                        placeholder="Near Water Tank, Gokul Shirgaon, Kolhapur"
                                         placeholderTextColor="#94A3B8"
-                                        keyboardType="numeric"
-                                        maxLength={6}
                                     />
-                                    <Text style={styles.helperText}>Location is pinned automatically when you fill all fields 📍</Text>
                                 </View>
 
                                 {loading ? (

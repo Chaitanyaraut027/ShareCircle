@@ -276,9 +276,8 @@ const DonateFormScreen = ({ navigation }) => {
             formData.append('quantity', quantity);
             formData.append('homeNo', homeNo);
             formData.append('street', street);
-            // Build a complete fullAddress string for the pickupAddress field on the backend
-            const builtFullAddress = fullAddress || [homeNo, street].filter(Boolean).join(', ');
-            formData.append('fullAddress', builtFullAddress);
+            // Send the raw fullAddress value to the backend, let backend concatenate it cleanly
+            formData.append('fullAddress', fullAddress || '');
             formData.append('latitude', finalCoords.latitude.toString());
             formData.append('longitude', finalCoords.longitude.toString());
             formData.append('donorId', user._id);
@@ -507,9 +506,7 @@ const DonateFormScreen = ({ navigation }) => {
                                                 if (errors.fullAddress) setErrors(e => ({ ...e, fullAddress: false }));
                                             }}
                                         />
-                                        <Text style={styles.helperText}>
-                                            {autoFilled ? '✅ Location auto-pinned from GPS/saved address' : 'Pin is set automatically when all fields are filled 📍'}
-                                        </Text>
+
                                     </View>
                                 </View>
 
