@@ -796,7 +796,7 @@ const styles = StyleSheet.create({
   },
   sidebarOverlay: {
     position: 'absolute',
-    top: 0,
+    top: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
     left: 0,
     right: 0,
     bottom: 0,
@@ -811,7 +811,7 @@ const styles = StyleSheet.create({
     width: width * 0.75,
     height: '100%',
     backgroundColor: '#FFF',
-    paddingTop: (Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 50) + 16,
+    paddingTop: 20,
     paddingHorizontal: 20,
     shadowColor: '#000',
     shadowOffset: { width: 4, height: 0 },
