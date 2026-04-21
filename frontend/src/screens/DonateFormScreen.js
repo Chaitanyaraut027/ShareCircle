@@ -33,12 +33,13 @@ const DonateFormScreen = ({ navigation }) => {
     const [quantity, setQuantity] = useState('');
     
     // Address states
-    const [homeNo, setHomeNo] = useState('');    // Home/Flat/Building
-    const [street, setStreet] = useState('');    // Street/Locality/Area
-    const [pincode, setPincode] = useState('');   // Pincode
+    const [homeNo, setHomeNo] = useState('');       // Home/Flat/Building
+    const [street, setStreet] = useState('');       // Street/Locality/Area
+    const [fullAddress, setFullAddress] = useState(''); // Full address / Landmark
     const [coords, setCoords] = useState(null);
     const [isGeocoding, setIsGeocoding] = useState(false);
-    const [locationPinned, setLocationPinned] = useState(false); // subtle success badge
+    const [locationPinned, setLocationPinned] = useState(false);
+    const [autoFilled, setAutoFilled] = useState(false); // true when current/saved used
 
     const [loading, setLoading] = useState(false);
     const [aiLoading, setAiLoading] = useState(false);
@@ -122,19 +123,16 @@ const DonateFormScreen = ({ navigation }) => {
     };
 
 
-    // Silent background geocoding — triggers when pincode reaches 6 digits
+    // Silent background geocoding — triggers when all 3 manual fields are non-empty
     useEffect(() => {
-        // Need at least street or homeNo + a valid 6-digit pincode
-        if (pincode.length !== 6) { setLocationPinned(false); return; }
-        if (!street && !homeNo) return;
+        if (autoFilled) return; // coords already set via GPS/saved — no need to geocode
+        if (!homeNo || !street || !fullAddress) { setLocationPinned(false); return; }
 
         const timer = setTimeout(async () => {
             setIsGeocoding(true);
             setLocationPinned(false);
             try {
-                // Build a precise query: "Building, Street, Pincode, India"
-                const parts = [homeNo, street, pincode, 'India'].filter(Boolean);
-                const query = parts.join(', ');
+                const query = [homeNo, street, fullAddress, 'India'].filter(Boolean).join(', ');
                 const results = await Location.geocodeAsync(query);
                 if (results && results.length > 0) {
                     setCoords({ latitude: results[0].latitude, longitude: results[0].longitude });
@@ -150,7 +148,7 @@ const DonateFormScreen = ({ navigation }) => {
 
         return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [homeNo, street, pincode]);
+    }, [homeNo, street, fullAddress, autoFilled]);
 
     // handleMarkerDragEnd removed — map picker no longer shown
 
@@ -169,10 +167,16 @@ const DonateFormScreen = ({ navigation }) => {
             const reverse = await Location.reverseGeocodeAsync(newCoords);
             if (reverse && reverse.length > 0) {
                 const addr = reverse[0];
-                setHomeNo(addr.name || '');
-                setStreet([addr.street, addr.district].filter(Boolean).join(', '));
-                if (addr.postalCode) setPincode(addr.postalCode);
+                // Pre-fill what we can — user can still edit if needed
+                const building = addr.name || addr.streetNumber || '';
+                const streetName = [addr.street, addr.district].filter(Boolean).join(', ');
+                const landmark = [addr.subregion || addr.city, addr.region].filter(Boolean).join(', ');
+                setHomeNo(building);
+                setStreet(streetName);
+                setFullAddress(landmark);
             }
+            setAutoFilled(true);
+            setLocationPinned(true);
             showToast('Current location set! 📍');
         } catch (error) {
             showToast('Could not fetch location', 'error');
@@ -186,15 +190,17 @@ const DonateFormScreen = ({ navigation }) => {
         if (user.address) {
             setHomeNo(user.address.homeNo || '');
             setStreet(user.address.street || '');
-            const zip = user.address.fullAddress?.match(/\b\d{6}\b/)?.[0] || '';
-            if (zip) setPincode(zip);
+            // Build fullAddress from available fields
+            const fa = user.address.fullAddress || user.address.landmark || '';
+            setFullAddress(fa);
             if (user.location?.coordinates) {
                 setCoords({ latitude: user.location.coordinates[1], longitude: user.location.coordinates[0] });
+                setAutoFilled(true);
                 setLocationPinned(true);
             }
             showToast('Profile address loaded! 🏠');
         } else {
-            showToast('No saved address found', 'info');
+            showToast('No saved address found. Update your profile first.', 'info');
         }
     };
 
@@ -231,13 +237,15 @@ const DonateFormScreen = ({ navigation }) => {
         if (!quantity) newErrors.quantity = true;
         if (!homeNo) newErrors.homeNo = true;
         if (!street) newErrors.street = true;
-        if (!pincode || pincode.length !== 6) newErrors.pincode = true;
+        // fullAddress is required ONLY for manual entry; auto-fill sets coords directly
+        if (!autoFilled && !fullAddress) newErrors.fullAddress = true;
 
         // If no coords yet, try to geocode now
         let finalCoords = coords;
-        if (!finalCoords && homeNo && street && pincode.length === 6) {
+        if (!finalCoords && homeNo && street) {
             try {
-                const res = await Location.geocodeAsync(`${homeNo}, ${street}, ${pincode}, India`);
+                const q = [homeNo, street, fullAddress, 'India'].filter(Boolean).join(', ');
+                const res = await Location.geocodeAsync(q);
                 if (res && res.length > 0) {
                     finalCoords = { latitude: res[0].latitude, longitude: res[0].longitude };
                     setCoords(finalCoords);
@@ -268,7 +276,9 @@ const DonateFormScreen = ({ navigation }) => {
             formData.append('quantity', quantity);
             formData.append('homeNo', homeNo);
             formData.append('street', street);
-            formData.append('fullAddress', `${homeNo}, ${street}, ${pincode}`);
+            // Build a complete fullAddress string for the pickupAddress field on the backend
+            const builtFullAddress = fullAddress || [homeNo, street].filter(Boolean).join(', ');
+            formData.append('fullAddress', builtFullAddress);
             formData.append('latitude', finalCoords.latitude.toString());
             formData.append('longitude', finalCoords.longitude.toString());
             formData.append('donorId', user._id);
@@ -474,10 +484,10 @@ const DonateFormScreen = ({ navigation }) => {
                                         />
                                     </View>
 
-                                    {/* Field 3 — Pincode */}
+                                    {/* Field 3 — Full Address / Landmark */}
                                     <View style={styles.inputGroup}>
                                         <View style={styles.labelRow}>
-                                            <Text style={styles.label}>Pincode *</Text>
+                                            <Text style={styles.label}>Full Address / Landmark *</Text>
                                             {isGeocoding && <ActivityIndicator size="small" color="#10B981" />}
                                             {locationPinned && !isGeocoding && (
                                                 <View style={styles.pinnedBadge}>
@@ -487,14 +497,19 @@ const DonateFormScreen = ({ navigation }) => {
                                             )}
                                         </View>
                                         <TextInput
-                                            style={[styles.input, errors.pincode && styles.errorInput]}
-                                            placeholder="e.g. 416209"
+                                            style={[styles.input, errors.fullAddress && styles.errorInput]}
+                                            placeholder="Near Water Tank, Gokul Shirgaon, Kolhapur"
                                             placeholderTextColor="#94A3B8"
-                                            keyboardType="numeric"
-                                            maxLength={6}
-                                            value={pincode}
-                                            onChangeText={(t) => { setPincode(t); if (errors.pincode) setErrors(e => ({ ...e, pincode: false })); }}
+                                            value={fullAddress}
+                                            onChangeText={(t) => {
+                                                setFullAddress(t);
+                                                setAutoFilled(false); // manual edit clears auto mode
+                                                if (errors.fullAddress) setErrors(e => ({ ...e, fullAddress: false }));
+                                            }}
                                         />
+                                        <Text style={styles.helperText}>
+                                            {autoFilled ? '✅ Location auto-pinned from GPS/saved address' : 'Pin is set automatically when all fields are filled 📍'}
+                                        </Text>
                                     </View>
                                 </View>
 

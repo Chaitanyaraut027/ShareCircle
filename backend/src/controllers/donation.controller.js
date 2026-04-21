@@ -9,8 +9,11 @@ import { sendPushNotification, sendBulkNotifications } from '../utils/notificati
 // @access  Private (Assuming auth middleware would be used, but keeping simple for now)
 export const createDonation = async (req, res) => {
     try {
-        const { donorId, title, description, category, quantity, pickupAddress, longitude, latitude } = req.body;
+        const { donorId, title, description, category, quantity, homeNo, street, fullAddress, longitude, latitude } = req.body;
         
+        // Build the pickupAddress string from individual fields
+        const pickupAddress = fullAddress || [homeNo, street].filter(Boolean).join(', ') || '';
+
         let imageUrl = '';
 
         if (req.file) {
@@ -54,16 +57,16 @@ export const createDonation = async (req, res) => {
         try {
             const allUsersWithToken = await User.find({
                 _id: { $ne: donorId },
-                pushToken: { $ne: null }
+                pushToken: { $exists: true, $ne: null, $ne: '' }
             }).select('pushToken');
 
-            const tokens = allUsersWithToken.map(u => u.pushToken);
+            const tokens = allUsersWithToken.map(u => u.pushToken).filter(Boolean);
             if (tokens.length > 0) {
                 await sendBulkNotifications(
                     tokens,
-                    'New Donation Posted! 🎁',
-                    `A new item "${title}" has been posted in the community. Check it out!`,
-                    { donationId: donation._id }
+                    '\uD83C\uDF81 New Donation Posted!',
+                    `"${title}" was just posted nearby. Tap to check it out!`,
+                    { donationId: String(donation._id), type: 'new_donation' }  // FCM data must be strings
                 );
             }
         } catch (e) {
@@ -223,9 +226,9 @@ export const requestItem = async (req, res) => {
             if (donor && donor.pushToken) {
                 await sendPushNotification(
                     donor.pushToken,
-                    'New Request Received! 📋',
-                    `${requester.fullName} has requested your item: "${donation.title}".`,
-                    { donationId: donation._id, type: 'request' }
+                    '\uD83D\uDCCB New Request Received!',
+                    `${requester?.fullName || 'Someone'} has requested your "${donation.title}".`,
+                    { donationId: String(donation._id), type: 'request' }   // MUST be strings
                 );
             }
         } catch (e) {
@@ -311,9 +314,9 @@ export const acceptRequest = async (req, res) => {
             if (requester && requester.pushToken) {
                 await sendPushNotification(
                     requester.pushToken,
-                    'Request Accepted! 🎉',
-                    `Great news! Your request for "${donation.title}" has been accepted. You can now coordinate the pickup.`,
-                    { donationId: donation._id }
+                    '\uD83C\uDF89 Request Accepted!',
+                    `Your request for "${donation.title}" was accepted! Coordinate the pickup now.`,
+                    { donationId: String(donation._id), type: 'accepted' }  // MUST be strings
                 );
             }
         } catch (e) {

@@ -19,7 +19,8 @@ import {
   Linking,
   TextInput,
   Alert,
-  RefreshControl
+  RefreshControl,
+  StatusBar,
 } from 'react-native';
 import CustomToast from '../components/CustomToast';
 
@@ -329,13 +330,6 @@ const DashboardScreen = ({ navigation }) => {
               )}
 
               <View style={styles.sidebarDivider} />
-              
-              <TouchableOpacity style={styles.sidebarItem} onPress={() => setIsSidebarOpen(false)}>
-                <View style={[styles.sidebarIconBox, {backgroundColor: '#F1F5F9'}]}>
-                  <Feather name="settings" color="#1E293B" size={22} />
-                </View>
-                <Text style={styles.sidebarLabel}>Services</Text>
-              </TouchableOpacity>
             </View>
 
             <View style={styles.sidebarFooter}>
@@ -817,7 +811,7 @@ const styles = StyleSheet.create({
     width: width * 0.75,
     height: '100%',
     backgroundColor: '#FFF',
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingTop: (Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 50) + 16,
     paddingHorizontal: 20,
     shadowColor: '#000',
     shadowOffset: { width: 4, height: 0 },
