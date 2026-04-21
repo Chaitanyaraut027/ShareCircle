@@ -55,22 +55,32 @@ export const createDonation = async (req, res) => {
 
         // NOTIFICATION: Notify all users with a push token about the new donation
         try {
+            console.log(`\uD83D\uDCE3 Broadcasting new donation: ${title} from donor: ${donorId}`);
+            
             const allUsersWithToken = await User.find({
                 _id: { $ne: donorId },
                 pushToken: { $exists: true, $ne: null, $ne: '' }
             }).select('pushToken');
 
-            const tokens = allUsersWithToken.map(u => u.pushToken).filter(Boolean);
+            console.log(`\uD83D\uDCDD Found ${allUsersWithToken.length} other users with push tokens.`);
+
+            const tokens = allUsersWithToken
+                .map(u => u.pushToken)
+                .filter(t => t && typeof t === 'string' && t.length > 10);
+
             if (tokens.length > 0) {
+                console.log(`\uD83D\uDE80 Sending bulk notification to ${tokens.length} devices...`);
                 await sendBulkNotifications(
                     tokens,
                     '\uD83C\uDF81 New Donation Posted!',
                     `"${title}" was just posted nearby. Tap to check it out!`,
-                    { donationId: String(donation._id), type: 'new_donation' }  // FCM data must be strings
+                    { donationId: String(donation._id), type: 'new_donation' }
                 );
+            } else {
+                console.log('⚠️ No valid push tokens found for broadcast.');
             }
         } catch (e) {
-            console.error('Error in broadcasting notification:', e);
+            console.error('❌ Error in broadcasting notification:', e);
         }
 
         res.status(201).json({
