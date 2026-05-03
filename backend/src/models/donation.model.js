@@ -28,8 +28,30 @@ const donationSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['pending', 'approved', 'available', 'completed', 'rejected'],
+        enum: ['pending', 'approved', 'available', 'completed', 'rejected', 'under_review'],
         default: 'pending',
+    },
+    moderationResult: {
+        status: {
+            type: String,
+            enum: ['approved', 'rejected', 'under_review', 'pending'],
+            default: 'pending',
+        },
+        aiVerdict: String,        // 'safe' | 'unsafe' | 'uncertain' | 'error'
+        aiReason: String,         // Human-readable reason from Gemini
+        aiScores: {
+            nudity: { type: Number, default: 0 },
+            violence: { type: Number, default: 0 },
+            weapons_drugs: { type: Number, default: 0 },
+            spam_text: { type: Number, default: 0 },
+            context_mismatch: { type: Number, default: 0 },
+        },
+        adminNote: String,        // Note left by admin when reviewing
+        reviewedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+        },
+        reviewedAt: Date,
     },
     pickupAddress: {
         type: String,

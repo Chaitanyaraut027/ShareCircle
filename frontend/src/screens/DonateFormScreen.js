@@ -46,6 +46,13 @@ const DonateFormScreen = ({ navigation }) => {
     const [imageUri, setImageUri] = useState(null);
     const [otherCategory, setOtherCategory] = useState('');
     const [errors, setErrors] = useState({});
+    
+    // AI Moderation Rejection Modal State
+    const [rejectionModalVisible, setRejectionModalVisible] = useState(false);
+    const [rejectionReason, setRejectionReason] = useState('');
+    
+    // AI Moderation Under Review Modal State
+    const [reviewModalVisible, setReviewModalVisible] = useState(false);
 
     // Fetch user on focus
     useFocusEffect(
@@ -214,7 +221,8 @@ const DonateFormScreen = ({ navigation }) => {
         try {
             const response = await axios.post(`${API_URL}/donations/generate-description`, { 
                 title, 
-                category: category === 'Other' ? otherCategory : category 
+                category: category === 'Other' ? otherCategory : category,
+                quantity
             }, { timeout: 30000 });
             
             if (response.data.success) {
@@ -292,17 +300,29 @@ const DonateFormScreen = ({ navigation }) => {
             });
 
             if (response.data.success) {
-                showToast('Donation Posted! 🎁');
-                setTimeout(() => {
-                    navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
-                }, 1500);
+                if (response.data.moderationVerdict === 'under_review') {
+                    setReviewModalVisible(true);
+                } else {
+                    showToast('Donation Posted! 🎁');
+                    setTimeout(() => {
+                        navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+                    }, 1500);
+                }
             } else {
                 showToast('Submission failed.', 'error');
             }
         } catch (error) {
-            console.error('Submission Error:', error);
-            const msg = error.response?.data?.message || error.message || 'Connection error.';
-            showToast(msg, 'error');
+            // Check if it's a moderation rejection first to avoid triggering the red Expo LogBox error screen
+            if (error.response?.status === 400 && error.response?.data?.moderation) {
+                console.log('🛡️ Image rejected by AI moderation:', error.response.data.message);
+                setRejectionReason(error.response.data.message || 'Your image was flagged as inappropriate. Please choose a different photo.');
+                setRejectionModalVisible(true);
+                setImageUri(null); // Clear the flagged image
+            } else {
+                console.error('Submission Error:', error);
+                const msg = error.response?.data?.message || error.message || 'Connection error.';
+                showToast(msg, 'error');
+            }
         } finally {
             setLoading(false);
         }
@@ -312,6 +332,96 @@ const DonateFormScreen = ({ navigation }) => {
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="dark-content" />
             <CustomToast visible={toastVisible} message={toastMessage} type={toastType} onHide={() => setToastVisible(false)} />
+            
+            {/* AI Moderation Rejection Modal */}
+            <Modal
+                animationType="fade"
+                transparent={true}
+                visible={rejectionModalVisible}
+                onRequestClose={() => setRejectionModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.rejectionModalContent}>
+                        <View style={styles.rejectionIconContainer}>
+                            <MaterialCommunityIcons name="shield-alert-outline" size={50} color="#FFF" />
+                        </View>
+                        <Text style={styles.rejectionTitle}>Image Flagged</Text>
+                        <Text style={styles.rejectionMessage}>
+                            {rejectionReason}
+                        </Text>
+                        <View style={styles.rejectionTipContainer}>
+                            <Ionicons name="information-circle" size={20} color="#64748B" />
+                            <Text style={styles.rejectionTipText}>
+                                Ensure your photo clearly shows the item and matches the selected category without explicit or prohibited content.
+                            </Text>
+                        </View>
+                        <TouchableOpacity 
+                            style={styles.rejectionBtn}
+                            onPress={() => setRejectionModalVisible(false)}
+                        >
+                            <Text style={styles.rejectionBtnText}>Got it, I'll retake</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* AI Moderation Under Review Modal */}
+            <Modal
+                animationType="fade"
+                transparent={true}
+                visible={reviewModalVisible}
+                onRequestClose={() => {
+                    setReviewModalVisible(false);
+                    navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+                }}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.rejectionModalContent}>
+                        <View style={[styles.rejectionIconContainer, { backgroundColor: '#F59E0B', borderColor: '#FEF3C7' }]}>
+                            <MaterialCommunityIcons name="shield-search" size={50} color="#FFF" />
+                        </View>
+                        <Text style={styles.rejectionTitle}>Under Review</Text>
+                        <Text style={styles.rejectionMessage}>
+                            Your donation has been submitted, but our AI couldn't fully verify the image. Our admin team will manually review it shortly!
+                        </Text>
+                        <View style={[styles.rejectionTipContainer, { backgroundColor: '#FFFBEB', borderColor: '#FEF3C7' }]}>
+                            <Ionicons name="time" size={20} color="#D97706" />
+                            <Text style={[styles.rejectionTipText, { color: '#D97706' }]}>
+                                You'll receive a notification once it's approved and live on the feed.
+                            </Text>
+                        </View>
+                        <TouchableOpacity 
+                            style={[styles.rejectionBtn, { backgroundColor: '#F59E0B' }]}
+                            onPress={() => {
+                                setReviewModalVisible(false);
+                                navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+                            }}
+                        >
+                            <Text style={styles.rejectionBtnText}>Okay, I understand</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* AI Validating Loading Modal */}
+            <Modal
+                animationType="fade"
+                transparent={true}
+                visible={loading}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.validatingModalContent}>
+                        <View style={styles.validatingIconWrapper}>
+                            <ActivityIndicator size="large" color="#10B981" style={{ transform: [{ scale: 1.5 }] }} />
+                            <MaterialCommunityIcons name="robot-outline" size={24} color="#10B981" style={{ position: 'absolute' }} />
+                        </View>
+                        <Text style={styles.validatingTitle}>AI is Analyzing...</Text>
+                        <Text style={styles.validatingText}>
+                            Verifying your image and checking community guidelines. This will just take a second! ✨
+                        </Text>
+                    </View>
+                </View>
+            </Modal>
             
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
@@ -515,7 +625,16 @@ const DonateFormScreen = ({ navigation }) => {
                                 onPress={handleDonateSubmit} 
                                 disabled={loading}
                             >
-                                {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.submitBtnText}>Confirm Donation</Text>}
+                                {loading ? (
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <ActivityIndicator color="#FFF" />
+                                        <Text style={{ color: '#FFF', marginLeft: 8, fontWeight: '700' }}>
+                                            Verifying & Uploading...
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    <Text style={styles.submitBtnText}>Confirm Donation</Text>
+                                )}
                             </TouchableOpacity>
                         </View>
                         
@@ -605,6 +724,23 @@ const styles = StyleSheet.create({
     sectionTitle: { fontSize: 18, fontWeight: '900', color: '#1E293B', marginBottom: 8 },
     textAreaSmall: { minHeight: 60, textAlignVertical: 'top' },
     subLabel: { fontSize: 13, fontWeight: '700', color: '#64748B', marginBottom: 8 },
+    
+    // Moderation Rejection Modal Styles
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+    rejectionModalContent: { width: '100%', backgroundColor: '#FFF', borderRadius: 28, padding: 24, alignItems: 'center', elevation: 10, shadowColor: '#EF4444', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20 },
+    rejectionIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#EF4444', justifyContent: 'center', alignItems: 'center', marginBottom: 20, borderWidth: 4, borderColor: '#FEF2F2' },
+    rejectionTitle: { fontSize: 24, fontWeight: '900', color: '#1E293B', marginBottom: 12 },
+    rejectionMessage: { fontSize: 15, color: '#475569', textAlign: 'center', marginBottom: 24, lineHeight: 22 },
+    rejectionTipContainer: { flexDirection: 'row', backgroundColor: '#F8FAFC', padding: 16, borderRadius: 16, marginBottom: 24, borderWidth: 1, borderColor: '#F1F5F9' },
+    rejectionTipText: { flex: 1, fontSize: 13, color: '#64748B', marginLeft: 12, lineHeight: 18 },
+    rejectionBtn: { backgroundColor: '#1E293B', width: '100%', paddingVertical: 18, borderRadius: 16, alignItems: 'center' },
+    rejectionBtnText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
+    
+    // Validating Modal Styles
+    validatingModalContent: { width: '85%', backgroundColor: '#FFF', borderRadius: 28, padding: 30, alignItems: 'center', elevation: 10, shadowColor: '#10B981', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20 },
+    validatingIconWrapper: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#F0FDF4', justifyContent: 'center', alignItems: 'center', marginBottom: 20, borderWidth: 4, borderColor: '#D1FAE5' },
+    validatingTitle: { fontSize: 22, fontWeight: '900', color: '#1E293B', marginBottom: 10 },
+    validatingText: { fontSize: 14, color: '#64748B', textAlign: 'center', lineHeight: 22 },
 });
 
 export default DonateFormScreen;

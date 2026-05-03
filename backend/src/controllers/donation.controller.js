@@ -1,15 +1,15 @@
 import Donation from '../models/donation.model.js';
 import User from '../models/user.model.js';
 import { uploadOnCloudinary } from '../utils/cloudinary.js';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { sendPushNotification, sendBulkNotifications } from '../utils/notifications.js';
+import { moderateImage, generateDescriptionFromImage } from '../utils/geminiModeration.js';
+import fs from 'fs';
 
-// @desc    Create a new donation
+// @desc    Create a new donation (with AI image moderation)
 // @route   POST /api/donations
-// @access  Private (Assuming auth middleware would be used, but keeping simple for now)
+// @access  Private
 export const createDonation = async (req, res) => {
     try {
-        const { donorId, title, description, category, quantity, homeNo, street, fullAddress, longitude, latitude } = req.body;
+        let { donorId, title, description, category, quantity, homeNo, street, fullAddress, longitude, latitude } = req.body;
         
         // Build the pickupAddress string from individual fields
         const pickupAddress = [homeNo, street, fullAddress].filter(Boolean).join(', ');
@@ -17,14 +17,194 @@ export const createDonation = async (req, res) => {
         let imageUrl = '';
 
         if (req.file) {
+            // ═══════════════════════════════════════════
+            //  STEP 1: AI MODERATION (before Cloudinary)
+            // ═══════════════════════════════════════════
+            console.log('🛡️ Running AI moderation on uploaded image...');
+            const moderationResult = await moderateImage(req.file.path, {
+                title,
+                category,
+                quantity,
+                description,
+            });
+
+            console.log('🛡️ Moderation verdict:', moderationResult.verdict);
+
+            // ── UNSAFE → Reject immediately ──
+            if (moderationResult.verdict === 'unsafe') {
+                // Clean up temp file (don't upload to Cloudinary)
+                if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+
+                console.log('🚫 Donation REJECTED by AI moderation:', moderationResult.reason);
+                return res.status(400).json({
+                    success: false,
+                    moderation: true,
+                    message: `Your image was flagged as inappropriate: ${moderationResult.reason}. Please upload a different image.`,
+                    moderationDetail: {
+                        verdict: 'unsafe',
+                        reason: moderationResult.reason,
+                        scores: moderationResult.scores,
+                    }
+                });
+            }
+
+            // ── STEP 2: AI DESCRIPTION (if empty) ──
+            if (!description || description.trim() === '') {
+                console.log('🛡️ Description is empty, generating with AI...');
+                const aiDesc = await generateDescriptionFromImage(req.file.path, { title, category });
+                if (aiDesc) {
+                    description = `[AI Generated] ${aiDesc}`;
+                    console.log('🛡️ Generated description:', description);
+                }
+            }
+
+            // ── SAFE or UNCERTAIN or ERROR → Upload to Cloudinary ──
             const uploaded = await uploadOnCloudinary(req.file.path);
             if (uploaded) {
                 imageUrl = uploaded.secure_url;
             } else {
                 return res.status(500).json({ success: false, message: 'Image upload failed' });
             }
+
+            // ── Determine donation status based on moderation ──
+            let donationStatus = 'approved';      // default for safe
+            let moderationStatus = 'approved';
+
+            if (moderationResult.verdict === 'uncertain') {
+                donationStatus = 'under_review';
+                moderationStatus = 'under_review';
+            } else if (moderationResult.verdict === 'error') {
+                donationStatus = 'under_review';
+                moderationStatus = 'under_review';
+            }
+            // 'safe' → stays approved
+
+            let expiresAt = null;
+            if (category === 'Food') {
+                expiresAt = new Date();
+                expiresAt.setHours(expiresAt.getHours() + 12);
+            }
+
+            const donation = new Donation({
+                donor: donorId,
+                title,
+                description,
+                category,
+                quantity,
+                pickupAddress,
+                image: imageUrl,
+                status: donationStatus,
+                expiresAt,
+                location: {
+                    type: 'Point',
+                    coordinates: [parseFloat(longitude) || 0, parseFloat(latitude) || 0]
+                },
+                moderationResult: {
+                    status: moderationStatus,
+                    aiVerdict: moderationResult.verdict,
+                    aiReason: moderationResult.reason,
+                    aiScores: moderationResult.scores || {},
+                },
+            });
+
+            await donation.save();
+
+            // Update user's donation count and reward points
+            await User.findByIdAndUpdate(donorId, {
+                $inc: { donationCount: 1, rewardPoints: 10 } 
+            });
+
+            // ── SAFE → Broadcast to all users ──
+            if (donationStatus === 'approved') {
+                try {
+                    console.log(`📣 Broadcasting new donation: ${title} from donor: ${donorId}`);
+                    const allUsersWithToken = await User.find({
+                        _id: { $ne: donorId },
+                        pushToken: { $exists: true, $ne: null, $ne: '' }
+                    }).select('pushToken');
+
+                    const tokens = allUsersWithToken
+                        .map(u => u.pushToken)
+                        .filter(t => t && typeof t === 'string' && t.length > 10);
+
+                    if (tokens.length > 0) {
+                        await sendBulkNotifications(
+                            tokens,
+                            '🎁 New Donation Posted!',
+                            `"${title}" was just posted nearby. Tap to check it out!`,
+                            { donationId: String(donation._id), type: 'new_donation' }
+                        );
+                    }
+                } catch (e) {
+                    console.error('❌ Error in broadcasting notification:', e);
+                }
+
+                return res.status(201).json({
+                    success: true,
+                    data: donation,
+                    message: 'Donation created successfully! ✅',
+                    moderationVerdict: 'safe',
+                });
+            }
+
+            // ── UNDER REVIEW → Notify user + admin ──
+            if (donationStatus === 'under_review') {
+                // Notify the donor
+                try {
+                    const donor = await User.findById(donorId).select('pushToken');
+                    if (donor && donor.pushToken) {
+                        const reviewReason = moderationResult.verdict === 'error'
+                            ? 'Our AI verification system is temporarily unavailable.'
+                            : `Our AI flagged a minor concern: ${moderationResult.reason}`;
+
+                        await sendPushNotification(
+                            donor.pushToken,
+                            '🔍 Donation Under Review',
+                            `Your donation "${title}" is being reviewed by our team. ${reviewReason} We'll notify you once it's approved. Thank you for your patience!`,
+                            { donationId: String(donation._id), type: 'under_review' }
+                        );
+                    }
+                } catch (e) {
+                    console.error('❌ Error notifying donor about review:', e);
+                }
+
+                // Notify all admins
+                try {
+                    const admins = await User.find({
+                        role: 'admin',
+                        pushToken: { $exists: true, $ne: null, $ne: '' }
+                    }).select('pushToken');
+
+                    const adminTokens = admins
+                        .map(a => a.pushToken)
+                        .filter(t => t && typeof t === 'string' && t.length > 10);
+
+                    if (adminTokens.length > 0) {
+                        const adminReason = moderationResult.verdict === 'error'
+                            ? 'AI moderation failed — manual review required.'
+                            : `AI flagged: ${moderationResult.reason}`;
+
+                        await sendBulkNotifications(
+                            adminTokens,
+                            '⚠️ Donation Needs Review',
+                            `"${title}" requires manual review. ${adminReason}`,
+                            { donationId: String(donation._id), type: 'admin_review' }
+                        );
+                    }
+                } catch (e) {
+                    console.error('❌ Error notifying admins about review:', e);
+                }
+
+                return res.status(201).json({
+                    success: true,
+                    data: donation,
+                    message: 'Your donation has been submitted and is under review. Our team will verify it shortly — you\'ll receive a notification once approved! 🙏',
+                    moderationVerdict: 'under_review',
+                });
+            }
         }
 
+        // ── No image uploaded — save normally ──
         let expiresAt = null;
         if (category === 'Food') {
             expiresAt = new Date();
@@ -39,45 +219,43 @@ export const createDonation = async (req, res) => {
             quantity,
             pickupAddress,
             image: imageUrl,
+            status: 'approved',
             expiresAt,
             location: {
                 type: 'Point',
                 coordinates: [parseFloat(longitude) || 0, parseFloat(latitude) || 0]
-            }
+            },
+            moderationResult: {
+                status: 'approved',
+                aiVerdict: 'safe',
+                aiReason: 'No image uploaded — text-only donation',
+            },
         });
 
         await donation.save();
 
-        // Update user's donation count and reward points in real-time
         await User.findByIdAndUpdate(donorId, {
             $inc: { donationCount: 1, rewardPoints: 10 } 
         });
 
-        // NOTIFICATION: Notify all users with a push token about the new donation
+        // Broadcast
         try {
-            console.log(`\uD83D\uDCE3 Broadcasting new donation: ${title} from donor: ${donorId}`);
-            
             const allUsersWithToken = await User.find({
                 _id: { $ne: donorId },
                 pushToken: { $exists: true, $ne: null, $ne: '' }
             }).select('pushToken');
-
-            console.log(`\uD83D\uDCDD Found ${allUsersWithToken.length} other users with push tokens.`);
 
             const tokens = allUsersWithToken
                 .map(u => u.pushToken)
                 .filter(t => t && typeof t === 'string' && t.length > 10);
 
             if (tokens.length > 0) {
-                console.log(`\uD83D\uDE80 Sending bulk notification to ${tokens.length} devices...`);
                 await sendBulkNotifications(
                     tokens,
-                    '\uD83C\uDF81 New Donation Posted!',
+                    '🎁 New Donation Posted!',
                     `"${title}" was just posted nearby. Tap to check it out!`,
                     { donationId: String(donation._id), type: 'new_donation' }
                 );
-            } else {
-                console.log('⚠️ No valid push tokens found for broadcast.');
             }
         } catch (e) {
             console.error('❌ Error in broadcasting notification:', e);
@@ -86,7 +264,7 @@ export const createDonation = async (req, res) => {
         res.status(201).json({
             success: true,
             data: donation,
-            message: 'Donation created successfully'
+            message: 'Donation created successfully!'
         });
     } catch (error) {
         console.error(error);
@@ -99,7 +277,7 @@ export const createDonation = async (req, res) => {
 // @access  Public
 export const generateAIDescription = async (req, res) => {
     try {
-        const { title, category } = req.body;
+        const { title, category, quantity } = req.body;
 
         if (!process.env.GEMINI_API_KEY) {
             console.error('❌ GEMINI_API_KEY is not set in environment variables!');
@@ -112,39 +290,33 @@ export const generateAIDescription = async (req, res) => {
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-        // Use pinned stable model IDs to avoid version resolution issues
-        const modelNames = [
-            "gemini-2.0-flash-001",
-            "gemini-2.0-flash",
-            "gemini-2.5-flash",
-            "gemini-1.5-flash-001",
-            "gemini-1.5-flash"
-        ];
-
         let text = "";
         let success = false;
         let lastErrorMsg = "";
 
-        for (const modelName of modelNames) {
-            try {
-                console.log(`🔄 Trying Gemini model: ${modelName}...`);
-                const model = genAI.getGenerativeModel({ model: modelName });
-                const prompt = `Write a short, engaging description for an item being donated. The title of the item is "${title}" and it belongs to the category "${category}". Keep it under 3 sentences, sound warm and helpful.`;
-
-                const result = await model.generateContent(prompt);
-                const response = await result.response;
-                text = response.text();
-
-                if (text && text.trim().length > 0) {
-                    success = true;
-                    console.log(`✅ Success with model: ${modelName}`);
-                    break;
+        try {
+            console.log(`🔄 Trying Gemini model: gemini-flash-lite-latest...`);
+            const model = genAI.getGenerativeModel({ 
+                model: "gemini-flash-lite-latest",
+                generationConfig: {
+                    maxOutputTokens: 60, // Restrict output to save tokens
+                    temperature: 0.7,
                 }
-            } catch (err) {
-                console.warn(`❌ Model ${modelName} failed: ${err.message}`);
-                lastErrorMsg = err.message;
-                continue;
+            });
+            // Keep prompt extremely brief to save input tokens
+            const prompt = `Write exactly 1 friendly sentence for a donation description. It MUST explicitly state the item name ("${title}"), its category ("${category}"), and the quantity (${quantity || '1'}).`;
+
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            text = response.text();
+
+            if (text && text.trim().length > 0) {
+                success = true;
+                console.log(`✅ Success with model: gemini-flash-lite-latest`);
             }
+        } catch (err) {
+            console.warn(`❌ Model gemini-flash-lite-latest failed: ${err.message}`);
+            lastErrorMsg = err.message;
         }
 
         if (!success) {
@@ -172,7 +344,10 @@ export const getNearbyDonations = async (req, res) => {
     try {
         const { latitude, longitude, radius = 5, query = '' } = req.query;
 
-        let findQuery = {};
+        let findQuery = {
+            // Only show donations that passed moderation (hide under_review + rejected)
+            status: { $nin: ['under_review', 'rejected'] }
+        };
 
         if (latitude && longitude) {
             const lat = parseFloat(latitude);

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   FlatList, ActivityIndicator, Linking, Image, Dimensions,
-  RefreshControl, Platform, StatusBar, Animated,
+  RefreshControl, Platform, StatusBar, Animated, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -132,6 +132,7 @@ export default function FindNearbyDonationsScreen({ navigation }) {
   const [selectedMarker, setSelectedMarker]     = useState(null);
   const [mapType, setMapType]             = useState('standard');
   const [mapCollapsed, setMapCollapsed]   = useState(false);
+  const [isFullScreen, setIsFullScreen]   = useState(false);
   const mapHeight = useRef(new Animated.Value(240)).current;
 
   // ── fetch ────────────────────────────────────────────────────────────────
@@ -265,66 +266,95 @@ export default function FindNearbyDonationsScreen({ navigation }) {
       </View>
 
       {/* ── Map ────────────────────────────────────────────────────────────── */}
-      <Animated.View style={[s.mapCard, { height: mapHeight }]}>
-        {location ? (
-          <>
-            <LeafletMap
-              style={{ flex: 1 }}
-              latitude={location.latitude}
-              longitude={location.longitude}
-              zoom={Math.max(8, Math.round(14 - Math.log2(Math.max(1, radius))))}
-              markers={filtered}
-              radiusKm={radius}
-              satellite={mapType === 'satellite'}
-              onMarkerPress={(id) => {
-                const f = donations.find(it => String(it._id) === String(id));
-                if (f) setSelectedMarker(f);
-              }}
-            />
-            {/* Map controls */}
-            <View style={s.mapControls}>
-              <TouchableOpacity style={s.mapCtlBtn}
-                onPress={() => setMapType(t => t === 'standard' ? 'satellite' : 'standard')}>
-                <Ionicons name={mapType === 'standard' ? 'layers-outline' : 'map-outline'} size={20} color="#1E293B" />
-              </TouchableOpacity>
-            </View>
-            {/* Selected marker popup */}
-            {selectedMarker && (
-              <View style={s.popup}>
-                <Image
-                  source={{ uri: selectedMarker.image || selectedMarker.imageUrl || 'https://via.placeholder.com/80' }}
-                  style={s.popupImg}
+      {(() => {
+          const mapContent = location ? (
+              <View style={{ flex: 1 }}>
+                <LeafletMap
+                  style={{ flex: 1 }}
+                  latitude={location.latitude}
+                  longitude={location.longitude}
+                  zoom={Math.max(8, Math.round(14 - Math.log2(Math.max(1, radius))))}
+                  markers={filtered}
+                  radiusKm={radius}
+                  satellite={mapType === 'satellite'}
+                  onMarkerPress={(id) => {
+                    const f = donations.find(it => String(it._id) === String(id));
+                    if (f) setSelectedMarker(f);
+                  }}
                 />
-                <View style={s.popupInfo}>
-                  <Text style={s.popupTitle} numberOfLines={1}>{selectedMarker.title}</Text>
-                  <Text style={s.popupDonor} numberOfLines={1}>{selectedMarker.donor?.fullName || 'Anonymous'}</Text>
-                  <Text style={s.popupDist}>
-                    {haversine(location, selectedMarker.location) ?? '--'} km away
-                  </Text>
-                </View>
-                <View style={s.popupActions}>
-                  <TouchableOpacity style={[s.popActBtn,{backgroundColor:'#10B981'}]}
-                    onPress={() => navigate(selectedMarker)}>
-                    <Ionicons name="navigate" size={15} color="#FFF" />
+                {/* Map controls */}
+                <View style={s.mapControls}>
+                  {isFullScreen && (
+                      <TouchableOpacity style={s.mapCtlBtn} onPress={() => setIsFullScreen(false)}>
+                        <Ionicons name="close" size={20} color="#EF4444" />
+                      </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={s.mapCtlBtn}
+                    onPress={() => setMapType(t => t === 'standard' ? 'satellite' : 'standard')}>
+                    <Ionicons name={mapType === 'standard' ? 'layers-outline' : 'map-outline'} size={20} color="#1E293B" />
                   </TouchableOpacity>
-                  <TouchableOpacity style={[s.popActBtn,{backgroundColor:'#25D366', marginTop:6}]}
-                    onPress={() => openWhatsApp(selectedMarker.donor?.mobileNumber, selectedMarker.title)}>
-                    <MaterialCommunityIcons name="whatsapp" size={16} color="#FFF" />
-                  </TouchableOpacity>
+                  {!isFullScreen && (
+                      <TouchableOpacity style={s.mapCtlBtn} onPress={() => setIsFullScreen(true)}>
+                        <Ionicons name="expand" size={20} color="#1E293B" />
+                      </TouchableOpacity>
+                  )}
                 </View>
-                <TouchableOpacity style={s.popupClose} onPress={() => setSelectedMarker(null)}>
-                  <Ionicons name="close-circle" size={22} color="#94A3B8" />
-                </TouchableOpacity>
+                {/* Selected marker popup */}
+                {selectedMarker && (
+                  <View style={[s.popup, isFullScreen && { bottom: 40 }]}>
+                    <Image
+                      source={{ uri: selectedMarker.image || selectedMarker.imageUrl || 'https://via.placeholder.com/80' }}
+                      style={s.popupImg}
+                    />
+                    <View style={s.popupInfo}>
+                      <Text style={s.popupTitle} numberOfLines={1}>{selectedMarker.title}</Text>
+                      <Text style={s.popupDonor} numberOfLines={1}>{selectedMarker.donor?.fullName || 'Anonymous'}</Text>
+                      <Text style={s.popupDist}>
+                        {haversine(location, selectedMarker.location) ?? '--'} km away
+                      </Text>
+                    </View>
+                    <View style={s.popupActions}>
+                      <TouchableOpacity style={[s.popActBtn,{backgroundColor:'#10B981'}]}
+                        onPress={() => {
+                            if (isFullScreen) setIsFullScreen(false);
+                            navigate(selectedMarker);
+                        }}>
+                        <Ionicons name="navigate" size={15} color="#FFF" />
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[s.popActBtn,{backgroundColor:'#25D366', marginTop:6}]}
+                        onPress={() => openWhatsApp(selectedMarker.donor?.mobileNumber, selectedMarker.title)}>
+                        <MaterialCommunityIcons name="whatsapp" size={16} color="#FFF" />
+                      </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity style={s.popupClose} onPress={() => setSelectedMarker(null)}>
+                      <Ionicons name="close-circle" size={22} color="#94A3B8" />
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
-            )}
-          </>
-        ) : (
-          <View style={s.mapLoading}>
-            <ActivityIndicator size="large" color="#10B981" />
-            <Text style={s.mapLoadingTxt}>Locating you…</Text>
-          </View>
-        )}
-      </Animated.View>
+          ) : (
+            <View style={s.mapLoading}>
+              <ActivityIndicator size="large" color="#10B981" />
+              <Text style={s.mapLoadingTxt}>Locating you…</Text>
+            </View>
+          );
+
+          if (isFullScreen) {
+              return (
+                  <Modal visible={true} animationType="fade" onRequestClose={() => setIsFullScreen(false)}>
+                      <View style={{ flex: 1, backgroundColor: '#FFF' }}>
+                          {mapContent}
+                      </View>
+                  </Modal>
+              );
+          }
+
+          return (
+              <Animated.View style={[s.mapCard, { height: mapHeight }]}>
+                  {mapContent}
+              </Animated.View>
+          );
+      })()}
 
       {/* ── Category filter ─────────────────────────────────────────────────── */}
       <View style={s.filterWrap}>

@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 5000;
    Server Bootstrap
 ========================= */
 const startServer = async () => {
-  console.log("🚀 Starting HeartMap backend...");
+  console.log("🚀 Starting ShareCircle backend...");
 
   try {
     // 1️⃣ Connect Database

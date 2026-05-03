@@ -21,6 +21,7 @@ import {
   Alert,
   RefreshControl,
   StatusBar,
+  Modal,
 } from 'react-native';
 import CustomToast from '../components/CustomToast';
 
@@ -439,7 +440,9 @@ const DashboardScreen = ({ navigation }) => {
            <Text style={{fontSize: 12, color: '#94A3B8', marginLeft: 5}}>100km</Text>
         </View>
 
-                <View style={isFullScreen ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, backgroundColor: '#FFF' } : { height: 320, borderRadius: 24, overflow: 'hidden', marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 }}>
+        {(() => {
+            const mapContent = (
+              <>
               {location ? (
                 <View style={{ flex: 1 }}>
                   <LeafletMap
@@ -465,6 +468,15 @@ const DashboardScreen = ({ navigation }) => {
 
                   {/* Floating Map Controls */}
                   <View style={mStyles.mapControls}>
+                    {isFullScreen && (
+                        <TouchableOpacity 
+                            style={mStyles.controlBtn}
+                            onPress={() => setIsFullScreen(false)}
+                        >
+                            <Ionicons name="close" size={24} color="#EF4444" />
+                        </TouchableOpacity>
+                    )}
+                    
                     <TouchableOpacity 
                       style={mStyles.controlBtn} 
                       onPress={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
@@ -472,22 +484,15 @@ const DashboardScreen = ({ navigation }) => {
                       <MaterialCommunityIcons name={mapType === 'standard' ? "layers-outline" : "map-outline"} size={22} color="#1E293B" />
                     </TouchableOpacity>
 
-                    <TouchableOpacity 
-                      style={mStyles.controlBtn} 
-                      onPress={() => setIsFullScreen(!isFullScreen)}
-                    >
-                      <Ionicons name={isFullScreen ? "contract" : "expand"} size={22} color="#1E293B" />
-                    </TouchableOpacity>
+                    {!isFullScreen && (
+                        <TouchableOpacity 
+                        style={mStyles.controlBtn} 
+                        onPress={() => setIsFullScreen(true)}
+                        >
+                        <Ionicons name="expand" size={22} color="#1E293B" />
+                        </TouchableOpacity>
+                    )}
                   </View>
-
-                  {isFullScreen && (
-                    <TouchableOpacity 
-                        style={mStyles.backBtn}
-                        onPress={() => setIsFullScreen(false)}
-                    >
-                        <Ionicons name="arrow-back" size={24} color="#1E293B" />
-                    </TouchableOpacity>
-                  )}
                 </View>
               ) : (
                  <View style={{flex:1, width: '100%', backgroundColor: '#E2F0E8', justifyContent:'center', alignItems:'center'}}>
@@ -497,14 +502,17 @@ const DashboardScreen = ({ navigation }) => {
 
               {/* Selected Marker Overlay details mimicking the list view */}
               {selectedMarker && (
-                  <View style={{ position: 'absolute', bottom: 10, left: 10, right: 10, backgroundColor: '#FFF', borderRadius: 20, padding: 14, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 6, flexDirection: 'row' }}>
+                  <View style={{ position: 'absolute', bottom: isFullScreen ? 40 : 10, left: 10, right: 10, backgroundColor: '#FFF', borderRadius: 20, padding: 14, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 6, flexDirection: 'row' }}>
                       <TouchableOpacity style={{position:'absolute', top: -8, right: -8, zIndex: 20, backgroundColor: '#FFF', borderRadius: 14}} onPress={() => setSelectedMarker(null)}>
                           <Ionicons name="close-circle" size={28} color="#E74C3C" />
                       </TouchableOpacity>
                       
                       <TouchableOpacity 
                           style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
-                          onPress={() => navigation.navigate('DonationDetail', { item: selectedMarker, userLocation: location })}
+                          onPress={() => {
+                              if (isFullScreen) setIsFullScreen(false);
+                              navigation.navigate('DonationDetail', { item: selectedMarker, userLocation: location });
+                          }}
                       >
                           <Image source={{ uri: selectedMarker.image || selectedMarker.imageUrl || 'https://via.placeholder.com/150' }} style={{ width: 85, height: 85, borderRadius: 14, marginRight: 14, backgroundColor: '#E2E8F0' }} />
                           
@@ -564,7 +572,25 @@ const DashboardScreen = ({ navigation }) => {
                       </View>
                   </View>
               )}
-        </View>
+              </>
+            );
+
+            if (isFullScreen) {
+                return (
+                    <Modal visible={true} animationType="fade" onRequestClose={() => setIsFullScreen(false)}>
+                        <View style={{ flex: 1, backgroundColor: '#FFF' }}>
+                            {mapContent}
+                        </View>
+                    </Modal>
+                );
+            }
+
+            return (
+                <View style={{ height: 320, borderRadius: 24, overflow: 'hidden', marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 }}>
+                    {mapContent}
+                </View>
+            );
+        })()}
 
         {/* Nearby Header */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -585,21 +611,29 @@ const DashboardScreen = ({ navigation }) => {
 
         <View style={{ marginBottom: 20 }}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 5 }}>
-                {categories.map((cat) => (
-                    <TouchableOpacity
-                        key={cat}
-                        onPress={() => setSelectedCategory(cat)}
-                        style={[
-                            styles.categoryBadge,
-                            selectedCategory === cat && styles.categoryBadgeActive
-                        ]}
-                    >
-                        <Text style={[
-                            styles.categoryBadgeText,
-                            selectedCategory === cat && styles.categoryBadgeTextActive
-                        ]}>{cat}</Text>
-                    </TouchableOpacity>
-                ))}
+                {categories.map((cat) => {
+                    const catColors = { All: '#6366F1', Food: '#EF4444', Clothes: '#3B82F6', Books: '#8B5CF6', Electronics: '#10B981', Medical: '#F59E0B', Toys: '#EC4899', Other: '#6B7280' };
+                    const catIcons = { All: 'apps', Food: 'fast-food', Clothes: 'shirt', Books: 'book', Electronics: 'tv', Medical: 'medical', Toys: 'extension-puzzle', Other: 'grid' };
+                    const isActive = selectedCategory === cat;
+                    const col = catColors[cat] || '#6B7280';
+                    
+                    return (
+                        <TouchableOpacity
+                            key={cat}
+                            onPress={() => setSelectedCategory(cat)}
+                            style={[
+                                styles.categoryBadge,
+                                isActive && { backgroundColor: col, borderColor: col }
+                            ]}
+                        >
+                            <Ionicons name={`${catIcons[cat] || 'grid'}${isActive ? '' : '-outline'}`} size={14} color={isActive ? '#FFF' : col} style={{marginRight: 6}} />
+                            <Text style={[
+                                styles.categoryBadgeText,
+                                isActive && { color: '#FFF' }
+                            ]}>{cat}</Text>
+                        </TouchableOpacity>
+                    );
+                })}
             </ScrollView>
         </View>
 
@@ -618,86 +652,79 @@ const DashboardScreen = ({ navigation }) => {
 
                 const phone = creator?.mobileNumber || '';
 
-                return (
-                    <View key={item._id} style={{ flexDirection: 'row', padding: 14, backgroundColor: '#FFF', borderRadius: 20, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 }}>
-                        <TouchableOpacity 
-                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
-                            onPress={() => navigation.navigate('DonationDetail', { item, userLocation: location })}
-                        >
-                            <Image source={{ uri: item.image || item.imageUrl || 'https://via.placeholder.com/150' }} style={{ width: 85, height: 85, borderRadius: 14, marginRight: 14, backgroundColor: '#E2E8F0' }} />
-                            
-                            <View style={{ flex: 1, justifyContent: 'center' }}>
-                                <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#1E293B', marginBottom: 4 }} numberOfLines={1}>{creator?.fullName || 'Anonymous'}</Text>
-                                <Text style={{ fontSize: 14, color: '#334155', fontWeight: '600', marginBottom: 4 }}>{item.title}</Text>
-                                <Text style={{ fontSize: 12, color: '#64748B' }}>Uploaded <Feather name="refresh-cw" size={10} /> {timeStr}</Text>
-                            </View>
-                        </TouchableOpacity>
-                        
-                        <View style={{ marginLeft: 10, alignItems: 'flex-end', justifyContent: 'center' }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                                <TouchableOpacity 
-                                    style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#4B8BF5', justifyContent: 'center', alignItems: 'center', marginRight: 8 }}
-                                    onPress={() => {
-                                        if (item.location && item.location.coordinates) {
-                                            Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${item.location.coordinates[1]},${item.location.coordinates[0]}`);
-                                        }
-                                    }}
-                                >
-                                    <Ionicons name="navigate" color="#FFF" size={16} />
-                                </TouchableOpacity>
-                                
-                                <TouchableOpacity 
-                                    style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', marginRight: 8 }}
-                                    onPress={() => {
-                                        if(phone) {
-                                            let num = formatPhoneNumber(phone, false);
-                                            Linking.openURL(`tel:${num}`).catch(e => alert("Could not open dialer"));
-                                        } else { alert("No mobile number available"); }
-                                    }}
-                                >
-                                    <Ionicons name="call" color="#2F7B5E" size={16} />
-                                </TouchableOpacity>
-                                
-                                <TouchableOpacity 
-                                    style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#30D158', justifyContent: 'center', alignItems: 'center' }}
-                                    onPress={async () => {
-                                        if(phone) {
-                                            let p = formatPhoneNumber(phone, true);
-                                            const userName = user?.fullName || 'a ShareCircle user';
-                                            const message = `*ShareCircle *\n\nHello, I hope you are doing well \n\nI am *${userName}*, and I am looking for *${item.title}*. If you happen to have one available and are willing to donate or share, it would truly mean a lot to me.\n\nThank you so much for your kindness and support ❤️`;
-                                            const encodedMsg = encodeURIComponent(message);
-                                            Linking.openURL(`https://wa.me/${p}?text=${encodedMsg}`).catch(e => alert("Could not open WhatsApp"));
-                                        } else { alert("No mobile number available"); }
-                                    }}
-                                >
-                                    <MaterialCommunityIcons name="whatsapp" color="#FFF" size={18} />
-                                </TouchableOpacity>
-                            </View>
-                            <TouchableOpacity 
-                                style={{ backgroundColor: '#2F7B5E', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, alignItems: 'center', width: '100%' }}
-                                onPress={async () => {
-                                    try {
-                                        const res = await fetch(`${API_URL}/donations/${item._id}/request`, {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ requesterId: user?._id, message: `I would like to request ${item.title}` })
-                                        });
-                                        const data = await res.json();
-                                        if (data.success) {
-                                            showToast("Request sent! Check the Requests tab. ✅");
-                                        } else {
-                                            showToast(data.message, "info");
-                                        }
-                                    } catch (error) {
-                                        showToast("Could not send request.", "error");
-                                    }
-                                }}
-                            >
+                const catColors = { Food: '#EF4444', Clothes: '#3B82F6', Books: '#8B5CF6', Electronics: '#10B981', Medical: '#F59E0B', Toys: '#EC4899', Other: '#6B7280' };
+                const catIcons = { Food: 'fast-food', Clothes: 'shirt', Books: 'book', Electronics: 'tv', Medical: 'medical', Toys: 'extension-puzzle', Other: 'grid' };
+                const dist = location ? calculateDistance(location, item.location) : 'N/A';
 
-                                <Text style={{ color: '#FFF', fontSize: 12, fontWeight: 'bold' }}>Request</Text>
-                            </TouchableOpacity>
+                return (
+                    <TouchableOpacity 
+                        key={item._id} 
+                        style={styles.nearbyCard}
+                        onPress={() => navigation.navigate('DonationDetail', { item, userLocation: location })}
+                    >
+                        <View style={styles.nearbyImageContainer}>
+                            <Image source={{ uri: item.image || item.imageUrl || 'https://via.placeholder.com/150' }} style={styles.nearbyImage} />
+                            <View style={[styles.nearbyCatBadge, { backgroundColor: catColors[item.category] || '#10B981' }]}>
+                               <Ionicons name={`${catIcons[item.category] || 'grid'}-outline`} size={10} color="#FFF" />
+                               <Text style={styles.nearbyCatText} numberOfLines={1}>{item.category || 'Other'}</Text>
+                            </View>
                         </View>
-                    </View>
+                        
+                        <View style={styles.nearbyInfo}>
+                            <Text style={styles.nearbyTitle} numberOfLines={1}>{item.title}</Text>
+                            
+                            <View style={styles.nearbyUserRow}>
+                               <Ionicons name="person-circle-outline" size={16} color="#94A3B8" />
+                               <Text style={styles.nearbyUserText} numberOfLines={1}>{creator?.fullName || 'Anonymous'}</Text>
+                            </View>
+                            
+                            <View style={styles.nearbyBottomRow}>
+                               <View style={styles.nearbyDistanceBadge}>
+                                  <Ionicons name="navigate-circle-outline" size={14} color="#64748B" />
+                                  <Text style={styles.nearbyDistanceText}>{dist}</Text>
+                               </View>
+                               <View style={styles.nearbyActionIconsContainer}>
+                                   <TouchableOpacity 
+                                       style={[styles.nearbyActionIconBtn, {backgroundColor: '#F0FDF4'}]}
+                                       onPress={() => {
+                                           if(phone) {
+                                               let num = formatPhoneNumber(phone, false);
+                                               Linking.openURL(`tel:${num}`).catch(e => alert("Could not open dialer"));
+                                           } else { alert("No mobile number available"); }
+                                       }}
+                                   >
+                                       <Ionicons name="call-outline" color="#10B981" size={16} />
+                                   </TouchableOpacity>
+                                   
+                                   <TouchableOpacity 
+                                       style={[styles.nearbyActionIconBtn, {backgroundColor: '#F0FDF4'}]}
+                                       onPress={async () => {
+                                           if(phone) {
+                                               let p = formatPhoneNumber(phone, true);
+                                               const userName = user?.fullName || 'a ShareCircle user';
+                                               const message = `*ShareCircle *\n\nHello, I hope you are doing well \n\nI am *${userName}*, and I am looking for *${item.title}*. If you happen to have one available and are willing to donate or share, it would truly mean a lot to me.\n\nThank you so much for your kindness and support ❤️`;
+                                               const encodedMsg = encodeURIComponent(message);
+                                               Linking.openURL(`https://wa.me/${p}?text=${encodedMsg}`).catch(e => alert("Could not open WhatsApp"));
+                                           } else { alert("No mobile number available"); }
+                                       }}
+                                   >
+                                       <Ionicons name="logo-whatsapp" color="#10B981" size={16} />
+                                   </TouchableOpacity>
+
+                                   <TouchableOpacity 
+                                       style={[styles.nearbyActionIconBtn, {backgroundColor: '#EFF6FF'}]}
+                                       onPress={() => {
+                                           if (item.location && item.location.coordinates) {
+                                               Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${item.location.coordinates[1]},${item.location.coordinates[0]}`);
+                                           }
+                                       }}
+                                   >
+                                       <Feather name="navigation" color="#3B82F6" size={14} />
+                                   </TouchableOpacity>
+                               </View>
+                            </View>
+                        </View>
+                    </TouchableOpacity>
                 );
             })
         )}
@@ -1329,12 +1356,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#D1EAE0',
   },
   categoryBadge: {
+    flexDirection: 'row',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F8FAFC',
     marginRight: 10,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1351,6 +1379,22 @@ const styles = StyleSheet.create({
   categoryBadgeTextActive: {
     color: '#FFF',
   },
+  
+  // New Nearby Donation UI Styles
+  nearbyCard: { backgroundColor: '#FFF', borderRadius: 24, padding: 12, flexDirection: 'row', marginBottom: 16, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12 },
+  nearbyImageContainer: { width: 100, height: 100, borderRadius: 16, overflow: 'hidden', backgroundColor: '#F1F5F9' },
+  nearbyImage: { width: '100%', height: '100%' },
+  nearbyCatBadge: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 6, paddingHorizontal: 4 },
+  nearbyCatText: { color: '#FFF', fontSize: 10, fontWeight: '800', marginLeft: 4 },
+  nearbyInfo: { flex: 1, marginLeft: 16, justifyContent: 'center' },
+  nearbyTitle: { fontSize: 18, fontWeight: '900', color: '#1E293B', marginBottom: 6 },
+  nearbyUserRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  nearbyUserText: { fontSize: 13, color: '#64748B', marginLeft: 6, fontWeight: '600' },
+  nearbyBottomRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  nearbyDistanceBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
+  nearbyDistanceText: { fontSize: 12, fontWeight: '700', color: '#475569', marginLeft: 4 },
+  nearbyActionIconsContainer: { flexDirection: 'row', alignItems: 'center' },
+  nearbyActionIconBtn: { width: 34, height: 34, borderRadius: 17, justifyContent: 'center', alignItems: 'center', marginLeft: 6 },
 });
 
 const mStyles = StyleSheet.create({

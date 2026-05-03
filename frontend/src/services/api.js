@@ -159,9 +159,37 @@ export const getAdminDonations = async () => {
     }
 };
 
-export const deleteAdminDonation = async (donationId) => {
+export const deleteAdminDonation = async (donationId, reason = '') => {
     try {
-        const res = await api.delete(`/admin/donations/${donationId}`);
+        const res = await api.delete(`/admin/donations/${donationId}`, { data: { reason } });
+        return res.data;
+    } catch (e) {
+        return { success: false };
+    }
+};
+
+// ADMIN — AI MODERATION REVIEW QUEUE
+export const getReviewQueue = async () => {
+    try {
+        const res = await api.get('/admin/review-queue');
+        return res.data;
+    } catch (e) {
+        return { success: false, data: [] };
+    }
+};
+
+export const approveReviewDonation = async (donationId, adminNote = '') => {
+    try {
+        const res = await api.put(`/admin/review/${donationId}/approve`, { adminNote });
+        return res.data;
+    } catch (e) {
+        return { success: false };
+    }
+};
+
+export const rejectReviewDonation = async (donationId, adminNote = '') => {
+    try {
+        const res = await api.put(`/admin/review/${donationId}/reject`, { adminNote });
         return res.data;
     } catch (e) {
         return { success: false };

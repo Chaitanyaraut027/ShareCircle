@@ -4,7 +4,10 @@ import {
     deleteUser, 
     getAllDonations, 
     deleteDonation,
-    getAdminStats
+    getAdminStats,
+    getReviewQueue,
+    approveDonation,
+    rejectDonation
 } from '../controllers/admin.controller.js';
 import { protect, authorize } from '../middleware/auth.middleware.js';
 
@@ -19,5 +22,10 @@ router.get('/users', getAllUsers);
 router.delete('/users/:id', deleteUser);
 router.get('/donations', getAllDonations);
 router.delete('/donations/:id', deleteDonation);
+
+// AI Moderation — Review Queue
+router.get('/review-queue', getReviewQueue);
+router.put('/review/:id/approve', approveDonation);
+router.put('/review/:id/reject', rejectDonation);
 
 export default router;

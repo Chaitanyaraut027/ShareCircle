@@ -20,8 +20,10 @@ import { useFocusEffect } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
 
-const HistoryScreen = ({ navigation }) => {
-  const [activeTab, setActiveTab] = useState('donations'); // 'donations' or 'requests'
+const HistoryScreen = ({ route, navigation }) => {
+  const { initialFilter, initialTab } = route.params || {};
+  const [activeTab, setActiveTab] = useState(initialTab || 'donations'); // 'donations' or 'requests'
+  const [statusFilter, setStatusFilter] = useState(initialFilter || 'All'); // 'All', 'Approved', 'Pending', 'Rejected'
   const [donations, setDonations] = useState([]);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -71,28 +73,58 @@ const HistoryScreen = ({ navigation }) => {
     });
   };
 
-  const getStatusDetails = (status) => {
-    const s = status ? status.toLowerCase() : 'pending';
+  const getStatusDetails = (item) => {
+    const s = item.status ? item.status.toLowerCase() : 'pending';
+    const mod = item.moderationResult || {};
+
     switch (s) {
       case 'completed':
       case 'accepted':
       case 'fulfilled':
         return { label: 'Completed', color: '#10B981', bg: '#D1FAE5', icon: 'check-circle' };
+      
+      case 'approved':
+      case 'available':
+        if (mod.reviewedBy) return { label: 'Admin Approved', color: '#10B981', bg: '#D1FAE5', icon: 'shield-check' };
+        if (mod.aiVerdict === 'safe') return { label: 'AI Approved', color: '#10B981', bg: '#D1FAE5', icon: 'robot' };
+        return { label: 'Approved', color: '#10B981', bg: '#D1FAE5', icon: 'check-circle' };
+
       case 'rejected':
       case 'cancelled':
-        return { label: 'Cancelled', color: '#EF4444', bg: '#FEE2E2', icon: 'close-circle' };
+        if (mod.reviewedBy) return { label: 'Admin Rejected', color: '#EF4444', bg: '#FEE2E2', icon: 'shield-alert' };
+        if (mod.aiVerdict === 'unsafe') return { label: 'AI Rejected', color: '#EF4444', bg: '#FEE2E2', icon: 'robot-dead' };
+        return { label: 'Rejected', color: '#EF4444', bg: '#FEE2E2', icon: 'close-circle' };
+
+      case 'under_review':
+      case 'pending':
+        if (mod.status === 'under_review') return { label: 'Admin Reviewing', color: '#F59E0B', bg: '#FEF3C7', icon: 'shield-search' };
+        return { label: 'Pending AI', color: '#F59E0B', bg: '#FEF3C7', icon: 'robot-outline' };
+
       default:
         return { label: 'Pending', color: '#F59E0B', bg: '#FEF3C7', icon: 'clock-outline' };
     }
   };
 
+  const getFilteredData = () => {
+    const data = activeTab === 'donations' ? donations : requests;
+    if (statusFilter === 'All') return data;
+    
+    return data.filter(item => {
+      const s = (item.status || 'pending').toLowerCase();
+      if (statusFilter === 'Approved') return ['approved', 'available', 'completed', 'accepted'].includes(s);
+      if (statusFilter === 'Pending') return ['pending', 'under_review'].includes(s);
+      if (statusFilter === 'Rejected') return ['rejected', 'cancelled'].includes(s);
+      return true;
+    });
+  };
+
   const renderItem = ({ item }) => {
-    const status = getStatusDetails(item.status || 'pending');
+    const status = getStatusDetails(item);
     const isDonation = activeTab === 'donations';
     
     return (
       <View style={styles.historyCard}>
-        <View style={styles.cardHighlight} />
+        <View style={[styles.cardHighlight, { backgroundColor: status.color }]} />
         <View style={styles.cardInner}>
           <Image 
             source={{ uri: item.image || 'https://via.placeholder.com/150' }} 
@@ -101,7 +133,8 @@ const HistoryScreen = ({ navigation }) => {
           <View style={styles.itemDetails}>
             <View style={styles.titleRow}>
               <Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text>
-              <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
+              <View style={[styles.statusBadge, { backgroundColor: status.bg, flexDirection: 'row', alignItems: 'center' }]}>
+                <MaterialCommunityIcons name={status.icon} size={12} color={status.color} style={{ marginRight: 4 }} />
                 <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
               </View>
             </View>
@@ -191,13 +224,28 @@ const HistoryScreen = ({ navigation }) => {
           </View>
       </View>
 
+      {/* Sub Filter for Status */}
+      <View style={styles.filterContainer}>
+        {['All', 'Approved', 'Pending', 'Rejected'].map(filter => (
+          <TouchableOpacity 
+            key={filter} 
+            style={[styles.filterChip, statusFilter === filter && styles.activeFilterChip]}
+            onPress={() => setStatusFilter(filter)}
+          >
+            <Text style={[styles.filterChipText, statusFilter === filter && styles.activeFilterChipText]}>
+              {filter}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
       {loading && !refreshing ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#10B981" />
         </View>
       ) : (
         <FlatList
-          data={activeTab === 'donations' ? donations : requests}
+          data={getFilteredData()}
           keyExtractor={(item) => item._id}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
@@ -322,6 +370,33 @@ const styles = StyleSheet.create({
       backgroundColor: '#F1F5F9',
       height: '80%',
       alignSelf: 'center',
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    marginTop: 15,
+    marginBottom: 5,
+    justifyContent: 'space-between',
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  activeFilterChip: {
+    backgroundColor: '#1E293B',
+    borderColor: '#1E293B',
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  activeFilterChipText: {
+    color: '#FFF',
   },
   listContent: {
     padding: 20,

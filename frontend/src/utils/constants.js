@@ -2,16 +2,14 @@ import { Platform } from 'react-native';
 
 const getApiUrl = () => {
     // PRODUCTION (Render)
-    return 'https://sharecircle-xjq0.onrender.com/api';
+    // return 'https://sharecircle-xjq0.onrender.com/api';
     
-    /* 
-    // Fallback for local development
+    // LOCAL DEVELOPMENT
     if (Platform.OS === 'web') {
         return 'http://localhost:5000/api';
     } else {
-        return 'http://192.168.92.117:5000/api';
+        return 'http://192.168.133.117:5000/api';
     }
-    */
 };
 
 export const API_URL = getApiUrl();

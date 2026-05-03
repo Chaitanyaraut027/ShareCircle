@@ -20,7 +20,7 @@ export const acceptRequest = async (req, res) => {
         await request.save();
 
         // 🚨 Here is where an AI filtering or Notification Service would trigger 🚨
-        // We simulate returning WhatsApp/Contact info of the Requester to the Donor
+        // We simulate returning WhatsApp/Contact info of the Requester to the   Donor
         const contactInfo = {
             name: request.requester.fullName,
             phone: request.requester.mobileNumber || '+1234567890',
