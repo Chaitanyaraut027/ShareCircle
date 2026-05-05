@@ -22,7 +22,6 @@ export const sendPushNotification = async (fcmToken, title, body, data = {}) => 
       notification: {
         sound: 'default',
         channelId: 'default',
-        icon: 'ic_notification',
         color: '#4CAF50',
       },
     },
@@ -66,7 +65,6 @@ export const sendBulkNotifications = async (tokens, title, body, data = {}) => {
       notification: {
         sound: 'default',
         channelId: 'default',
-        icon: 'ic_notification',
         color: '#4CAF50',
       },
     },

@@ -19,10 +19,10 @@ export const registerForPushNotificationsAsync = async () => {
 
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
+      name: 'ShareCircle Notifications',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#FF231F7C',
+      lightColor: '#4CAF50',
     });
   }
 
@@ -42,10 +42,12 @@ export const registerForPushNotificationsAsync = async () => {
     // IMPORTANT: This requires a physical device and a Development Build for remote notifications in SDK 53
     try {
         const deviceToken = (await Notifications.getDevicePushTokenAsync()).data;
-        console.log('Native Device Push Token:', deviceToken);
+        console.log('✅ Native Device Push Token:', deviceToken);
         token = deviceToken;
     } catch (e) {
-        console.warn('Push Notifications: Unable to get device token in Expo Go. Use a development build for full support.');
+        console.warn('❌ Push Notifications: Unable to get NATIVE device token.');
+        console.warn('💡 Reason: You are likely in Expo Go. Direct Firebase notifications require a Development Build or Standalone APK.');
+        console.warn('💡 To test notifications: Build an APK or use "npx expo run:android"');
         return null;
     }
   } else {

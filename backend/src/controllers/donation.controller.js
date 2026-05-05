@@ -127,6 +127,8 @@ export const createDonation = async (req, res) => {
                         .map(u => u.pushToken)
                         .filter(t => t && typeof t === 'string' && t.length > 10);
 
+                    console.log(`📱 Found ${tokens.length} valid FCM tokens for broadcasting.`);
+
                     if (tokens.length > 0) {
                         await sendBulkNotifications(
                             tokens,
@@ -178,6 +180,8 @@ export const createDonation = async (req, res) => {
                     const adminTokens = admins
                         .map(a => a.pushToken)
                         .filter(t => t && typeof t === 'string' && t.length > 10);
+
+                    console.log(`📱 Found ${adminTokens.length} admin tokens for review notification.`);
 
                     if (adminTokens.length > 0) {
                         const adminReason = moderationResult.verdict === 'error'
@@ -248,6 +252,8 @@ export const createDonation = async (req, res) => {
             const tokens = allUsersWithToken
                 .map(u => u.pushToken)
                 .filter(t => t && typeof t === 'string' && t.length > 10);
+
+            console.log(`📱 Found ${tokens.length} valid FCM tokens for broadcasting (no-image).`);
 
             if (tokens.length > 0) {
                 await sendBulkNotifications(

@@ -193,6 +193,8 @@ export const approveDonation = async (req, res) => {
                 .map(u => u.pushToken)
                 .filter(t => t && typeof t === 'string' && t.length > 10);
 
+            console.log(`📱 Admin Approval: Found ${tokens.length} users to broadcast to.`);
+
             if (tokens.length > 0) {
                 await sendBulkNotifications(
                     tokens,
