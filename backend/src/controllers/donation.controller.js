@@ -4,6 +4,7 @@ import { uploadOnCloudinary } from '../utils/cloudinary.js';
 import { moderateImage, generateDescriptionFromImage } from '../utils/geminiModeration.js';
 import fs from 'fs';
 import { sendPushNotification, sendBulkNotifications } from '../utils/notifications.js';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // @desc    Create a new donation (with AI image moderation)
 // @route   POST /api/donations
