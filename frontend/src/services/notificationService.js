@@ -19,7 +19,7 @@ export const registerForPushNotificationsAsync = async () => {
 
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
-      name: 'ShareCircle Notifications',
+      name: 'ShareCircle',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#4CAF50',

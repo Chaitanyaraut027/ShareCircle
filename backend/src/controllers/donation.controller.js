@@ -3,6 +3,7 @@ import User from '../models/user.model.js';
 import { uploadOnCloudinary } from '../utils/cloudinary.js';
 import { moderateImage, generateDescriptionFromImage } from '../utils/geminiModeration.js';
 import fs from 'fs';
+import { sendPushNotification, sendBulkNotifications } from '../utils/notifications.js';
 
 // @desc    Create a new donation (with AI image moderation)
 // @route   POST /api/donations
@@ -119,7 +120,6 @@ export const createDonation = async (req, res) => {
                 try {
                     console.log(`📣 Broadcasting new donation: ${title} from donor: ${donorId}`);
                     const allUsersWithToken = await User.find({
-                        _id: { $ne: donorId },
                         pushToken: { $exists: true, $ne: null, $ne: '' }
                     }).select('pushToken');
 
@@ -245,7 +245,6 @@ export const createDonation = async (req, res) => {
         // Broadcast
         try {
             const allUsersWithToken = await User.find({
-                _id: { $ne: donorId },
                 pushToken: { $exists: true, $ne: null, $ne: '' }
             }).select('pushToken');
 
