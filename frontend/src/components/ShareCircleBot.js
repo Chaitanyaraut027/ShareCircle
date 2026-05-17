@@ -61,7 +61,8 @@ const ShareCircleBot = ({ user }) => {
     return (
       <Modal visible={expanded} transparent={false} animationType="slide" onRequestClose={toggleExpand}>
         <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'padding'} 
+          keyboardVerticalOffset={Platform.select({ ios: 0, android: 90 })}
           style={styles.expandedContainer}
         >
           <View style={styles.chatWindow}>
