@@ -120,9 +120,23 @@ export const createDonation = async (req, res) => {
             if (donationStatus === 'approved') {
                 try {
                     console.log(`📣 Broadcasting new donation: ${title} from donor: ${donorId}`);
-                    const allUsersWithToken = await User.find({
+                    const lng = parseFloat(longitude) || 0;
+                    const lat = parseFloat(latitude) || 0;
+                    
+                    let query = {
+                        _id: { $ne: donorId },
                         pushToken: { $exists: true, $ne: null, $ne: '' }
-                    }).select('pushToken');
+                    };
+
+                    if (lng !== 0 && lat !== 0) {
+                        query.location = {
+                            $geoWithin: {
+                                $centerSphere: [[lng, lat], 100 / 6378.1] // 100 km radius
+                            }
+                        };
+                    }
+
+                    const allUsersWithToken = await User.find(query).select('pushToken');
 
                     const tokens = allUsersWithToken
                         .map(u => u.pushToken)
@@ -283,7 +297,7 @@ export const createDonation = async (req, res) => {
 // @access  Public
 export const generateAIDescription = async (req, res) => {
     try {
-        const { title, category, quantity } = req.body;
+        const { title, category, quantity, type } = req.body;
 
         if (!process.env.GEMINI_API_KEY) {
             console.error('❌ GEMINI_API_KEY is not set in environment variables!');
@@ -310,7 +324,10 @@ export const generateAIDescription = async (req, res) => {
                 }
             });
             // Keep prompt extremely brief to save input tokens
-            const prompt = `Write exactly 1 friendly sentence for a donation description. It MUST explicitly state the item name ("${title}"), its category ("${category}"), and the quantity (${quantity || '1'}).`;
+            const isNeed = type === 'need';
+            const prompt = isNeed 
+                ? `Write exactly 1 friendly sentence for a need request description. It MUST explicitly state "I want ${quantity || '1'} ${title}" of category "${category}" or something similar. Do NOT say you want to donate it.`
+                : `Write exactly 1 friendly sentence for a donation description. It MUST explicitly state the item name ("${title}"), its category ("${category}"), and the quantity (${quantity || '1'}).`;
 
             const result = await model.generateContent(prompt);
             const response = await result.response;

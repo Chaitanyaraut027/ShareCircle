@@ -14,7 +14,8 @@ import {
   Platform,
   Modal,
   TextInput,
-  SafeAreaView as SafeView
+  SafeAreaView as SafeView,
+  KeyboardAvoidingView
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
@@ -152,9 +153,19 @@ const AdminDashboardScreen = ({ navigation }) => {
 
   // Derived Data
   const filteredDonations = useMemo(() => {
-    if (donationFilter === 'all') return donations;
-    return donations.filter(d => d.status === donationFilter);
+    let list = donations.filter(d => d.itemType === 'donation');
+    if (donationFilter !== 'all') list = list.filter(d => d.status === donationFilter);
+    return list;
   }, [donations, donationFilter]);
+
+  const filteredNeeds = useMemo(() => {
+    let list = donations.filter(d => d.itemType === 'need');
+    if (donationFilter !== 'all') list = list.filter(d => d.status === donationFilter);
+    return list;
+  }, [donations, donationFilter]);
+
+  const reviewDonations = useMemo(() => reviewItems.filter(r => r.itemType === 'donation'), [reviewItems]);
+  const reviewNeeds = useMemo(() => reviewItems.filter(r => r.itemType === 'need'), [reviewItems]);
 
   const apiIssues = useMemo(() => {
     // Look for donations that had an AI error
@@ -205,9 +216,9 @@ const AdminDashboardScreen = ({ navigation }) => {
       <TouchableOpacity style={styles.nearbyCard} onPress={() => setSelectedDonation(item)}>
          <View style={styles.nearbyImageContainer}>
             <Image source={{ uri: item.image || 'https://via.placeholder.com/150' }} style={styles.nearbyImage} />
-            <View style={[styles.nearbyCatBadge, { backgroundColor: catColors[item.category] || '#10B981' }]}>
-               <Ionicons name={`${catIcons[item.category] || 'grid'}-outline`} size={10} color="#FFF" />
-               <Text style={styles.nearbyCatText} numberOfLines={1}>{item.category}</Text>
+            <View style={[styles.nearbyCatBadge, { backgroundColor: item.itemType === 'need' ? '#E91E63' : (catColors[item.category] || '#10B981') }]}>
+               <Ionicons name={item.itemType === 'need' ? 'hand-right' : (catIcons[item.category] || 'grid') + '-outline'} size={10} color="#FFF" />
+               <Text style={styles.nearbyCatText} numberOfLines={1}>{item.itemType === 'need' ? 'NEED' : item.category}</Text>
             </View>
          </View>
          <View style={styles.nearbyInfo}>
@@ -259,7 +270,7 @@ const AdminDashboardScreen = ({ navigation }) => {
 
   // ---------------- MODALS ---------------- //
 
-  const UserDetailModal = () => (
+  const renderUserDetailModal = () => (
     <Modal visible={!!selectedUser} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSelectedUser(null)}>
       {selectedUser && (
         <SafeView style={styles.modalContainer}>
@@ -302,7 +313,7 @@ const AdminDashboardScreen = ({ navigation }) => {
     </Modal>
   );
 
-  const DonationDetailModal = () => {
+  const renderDonationDetailModal = () => {
     if (!selectedDonation) return null;
     const isReview = selectedDonation.status === 'under_review';
     const isError = selectedDonation.moderationResult?.verdict === 'error';
@@ -376,43 +387,45 @@ const AdminDashboardScreen = ({ navigation }) => {
     );
   };
 
-  const ActionModalComponent = () => (
+  const renderActionModal = () => (
     <Modal visible={actionModal.visible} transparent animationType="fade" onRequestClose={() => setActionModal({visible: false, type: '', id: null, title: ''})}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-        <View style={{ width: '100%', backgroundColor: '#FFF', borderRadius: 24, padding: 24, elevation: 10 }}>
-          <Text style={{ fontSize: 20, fontWeight: '900', color: '#1E293B', marginBottom: 8 }}>
-            {actionModal.type === 'approve' ? 'Approve Donation' : actionModal.type === 'reject' ? 'Reject Donation' : 'Delete Donation'}
-          </Text>
-          <Text style={{ color: '#64748B', marginBottom: 20, lineHeight: 20 }}>
-            {actionModal.type === 'approve' ? `You are approving "${actionModal.title}". Add any optional notes:` : 
-             actionModal.type === 'reject' ? `You are rejecting "${actionModal.title}". Provide a reason to notify the user:` : 
-             `Are you sure you want to delete "${actionModal.title}"? Provide a reason to notify the user:`}
-          </Text>
-          
-          <TextInput
-            style={{ backgroundColor: '#F1F5F9', borderRadius: 12, padding: 16, minHeight: 100, textAlignVertical: 'top', marginBottom: 24, fontSize: 15, color: '#1E293B' }}
-            placeholder={actionModal.type === 'approve' ? "Looking good! (Optional)" : "This doesn't meet our community guidelines..."}
-            placeholderTextColor="#94A3B8"
-            multiline
-            value={actionNote}
-            onChangeText={setActionNote}
-          />
-          
-          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' }}>
-            <TouchableOpacity onPress={() => setActionModal({visible: false, type: '', id: null, title: ''})} style={{ paddingVertical: 12, paddingHorizontal: 20, marginRight: 10 }}>
-              <Text style={{ color: '#64748B', fontWeight: '800', fontSize: 16 }}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              onPress={submitActionModal}
-              style={{ backgroundColor: actionModal.type === 'approve' ? '#10B981' : '#EF4444', paddingHorizontal: 24, paddingVertical: 14, borderRadius: 12 }}
-            >
-              <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 16 }}>
-                {actionModal.type === 'approve' ? 'Confirm Approve' : actionModal.type === 'reject' ? 'Confirm Reject' : 'Confirm Delete'}
-              </Text>
-            </TouchableOpacity>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ width: '100%', backgroundColor: '#FFF', borderRadius: 24, padding: 24, elevation: 10 }}>
+            <Text style={{ fontSize: 20, fontWeight: '900', color: '#1E293B', marginBottom: 8 }}>
+              {actionModal.type === 'approve' ? 'Approve Item' : actionModal.type === 'reject' ? 'Reject Item' : 'Delete Item'}
+            </Text>
+            <Text style={{ color: '#64748B', marginBottom: 20, lineHeight: 20 }}>
+              {actionModal.type === 'approve' ? `You are approving "${actionModal.title}". Add any optional notes:` : 
+               actionModal.type === 'reject' ? `You are rejecting "${actionModal.title}". Provide a reason to notify the user:` : 
+               `Are you sure you want to delete "${actionModal.title}"? Provide a reason to notify the user:`}
+            </Text>
+            
+            <TextInput
+              style={{ backgroundColor: '#F1F5F9', borderRadius: 12, padding: 16, minHeight: 100, textAlignVertical: 'top', marginBottom: 24, fontSize: 15, color: '#1E293B' }}
+              placeholder={actionModal.type === 'approve' ? "Looking good! (Optional)" : "This doesn't meet our community guidelines..."}
+              placeholderTextColor="#94A3B8"
+              multiline
+              value={actionNote}
+              onChangeText={setActionNote}
+            />
+            
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' }}>
+              <TouchableOpacity onPress={() => setActionModal({visible: false, type: '', id: null, title: ''})} style={{ paddingVertical: 12, paddingHorizontal: 20, marginRight: 10 }}>
+                <Text style={{ color: '#64748B', fontWeight: '800', fontSize: 16 }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                onPress={submitActionModal}
+                style={{ backgroundColor: actionModal.type === 'approve' ? '#10B981' : '#EF4444', paddingHorizontal: 24, paddingVertical: 14, borderRadius: 12 }}
+              >
+                <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 16 }}>
+                  {actionModal.type === 'approve' ? 'Confirm Approve' : actionModal.type === 'reject' ? 'Confirm Reject' : 'Confirm Delete'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 
@@ -439,6 +452,9 @@ const AdminDashboardScreen = ({ navigation }) => {
              <TouchableOpacity style={[styles.tab, activeTab === 'donations' && styles.activeTab]} onPress={() => setActiveTab('donations')}>
                <Text style={[styles.tabText, activeTab === 'donations' && styles.activeTabText]}>Donations</Text>
              </TouchableOpacity>
+             <TouchableOpacity style={[styles.tab, activeTab === 'needs' && styles.activeTab]} onPress={() => setActiveTab('needs')}>
+               <Text style={[styles.tabText, activeTab === 'needs' && styles.activeTabText]}>Needs</Text>
+             </TouchableOpacity>
              <TouchableOpacity style={[styles.tab, activeTab === 'review' && styles.activeTab]} onPress={() => setActiveTab('review')}>
                <Text style={[styles.tabText, activeTab === 'review' && styles.activeTabText]}>Reviews {stats.reviewQueue > 0 && `(${stats.reviewQueue})`}</Text>
              </TouchableOpacity>
@@ -460,7 +476,7 @@ const AdminDashboardScreen = ({ navigation }) => {
         </ScrollView>
       )}
 
-      {activeTab === 'donations' && (
+      {(activeTab === 'donations' || activeTab === 'needs') && (
         <View style={styles.filterContainer}>
           {['all', 'pending', 'completed'].map(f => (
             <TouchableOpacity key={f} style={[styles.filterBtn, donationFilter === f && styles.activeFilterBtn]} onPress={() => setDonationFilter(f)}>
@@ -470,15 +486,15 @@ const AdminDashboardScreen = ({ navigation }) => {
         </View>
       )}
 
-      {(activeTab !== 'overview') && (
+      {(activeTab !== 'overview' && activeTab !== 'review') && (
         <View style={styles.listContainer}>
            {loading && !refreshing ? (
              <View style={styles.centered}><ActivityIndicator size="large" color="#2F7B5E" /></View>
            ) : (
              <FlatList
-               data={activeTab === 'users' ? users : activeTab === 'donations' ? filteredDonations : activeTab === 'review' ? reviewItems : apiIssues}
+               data={activeTab === 'users' ? users : activeTab === 'donations' ? filteredDonations : activeTab === 'needs' ? filteredNeeds : apiIssues}
                keyExtractor={(item) => item._id}
-               renderItem={activeTab === 'users' ? renderUserItem : (activeTab === 'donations' || activeTab === 'review') ? renderDonationItem : renderIssueItem}
+               renderItem={activeTab === 'users' ? renderUserItem : (activeTab === 'donations' || activeTab === 'needs') ? renderDonationItem : renderIssueItem}
                contentContainerStyle={styles.listContent}
                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2F7B5E']} />}
                ListEmptyComponent={<View style={styles.emptyContainer}><Text style={styles.emptyText}>No {activeTab} found.</Text></View>}
@@ -487,9 +503,41 @@ const AdminDashboardScreen = ({ navigation }) => {
         </View>
       )}
 
-      <UserDetailModal />
-      <DonationDetailModal />
-      <ActionModalComponent />
+      {activeTab === 'review' && (
+        <View style={styles.listContainer}>
+           {loading && !refreshing ? (
+             <View style={styles.centered}><ActivityIndicator size="large" color="#2F7B5E" /></View>
+           ) : (
+             <ScrollView 
+               contentContainerStyle={styles.listContent}
+               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2F7B5E']} />}
+             >
+               {reviewDonations.length === 0 && reviewNeeds.length === 0 ? (
+                 <View style={styles.emptyContainer}><Text style={styles.emptyText}>No items in review queue.</Text></View>
+               ) : (
+                 <>
+                   {reviewDonations.length > 0 && (
+                     <View style={{ marginBottom: 20 }}>
+                       <Text style={styles.sectionTitle}>Donations ({reviewDonations.length})</Text>
+                       {reviewDonations.map(item => <React.Fragment key={item._id}>{renderDonationItem({item})}</React.Fragment>)}
+                     </View>
+                   )}
+                   {reviewNeeds.length > 0 && (
+                     <View>
+                       <Text style={styles.sectionTitle}>Need Requests ({reviewNeeds.length})</Text>
+                       {reviewNeeds.map(item => <React.Fragment key={item._id}>{renderDonationItem({item})}</React.Fragment>)}
+                     </View>
+                   )}
+                 </>
+               )}
+             </ScrollView>
+           )}
+        </View>
+      )}
+
+      {renderUserDetailModal()}
+      {renderDonationDetailModal()}
+      {renderActionModal()}
 
     </SafeAreaView>
   );

@@ -243,3 +243,85 @@ export async function generateDescriptionFromImage(imagePath, context = {}) {
         return null;
     }
 }
+
+/**
+ * Text Moderation function (For text-only content like Need Requests)
+ */
+export async function moderateText(context = {}) {
+    const apiKey = process.env.GEMINI_MODERATION_API_KEY || process.env.GEMINI_API_KEY;
+    
+    if (!apiKey) {
+        console.error('🛡️ GEMINI API KEY not set — text moderation skipped');
+        return { verdict: 'error', reason: 'AI moderation service not configured', scores: null };
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const { title, category, quantity, description } = context;
+
+    const prompt = `You are a strict content moderation AI for "ShareCircle", a platform where people post "Need Requests" asking for items.
+
+Analyze the following text and return a JSON response. Check for ALL of the following:
+
+1. **NUDITY_PROFANITY**: Any explicit content, sexually suggestive language, vulgarity, swearing, or profanity.
+2. **VIOLENCE**: Threats, promoting violence, self-harm, hate speech.
+3. **WEAPONS_DRUGS**: Asking for guns, explosives, illegal drugs, alcohol, tobacco, or restricted items.
+4. **SPAM**: Advertisements, promotional content, or obvious spam.
+
+Text to analyze:
+- Title: "${title || 'not provided'}"
+- Category: "${category || 'not provided'}"
+- Quantity: "${quantity || 'not provided'}"
+- Description: "${description || 'not provided'}"
+
+**SCORING**: For each category, give a score from 0 to 100:
+- 0–30: Safe / no concern
+- 31–60: Minor concern / borderline
+- 61–100: Clear violation
+
+**VERDICT**: Based on your scores:
+- "safe": ALL scores are ≤ 30.
+- "unsafe": ANY score is ≥ 61.
+- "uncertain": ANY score is between 31–60 and no score is ≥ 61.
+
+**IMPORTANT**: Respond ONLY with valid JSON, no markdown, no code fences:
+
+{
+  "verdict": "safe" | "unsafe" | "uncertain",
+  "reason": "One clear sentence explaining your decision",
+  "scores": {
+    "nudity_profanity": <0-100>,
+    "violence": <0-100>,
+    "weapons_drugs": <0-100>,
+    "spam": <0-100>
+  }
+}`;
+
+    try {
+        console.log(`🛡️ Moderating text with ${MODEL_NAME}...`);
+        const model = genAI.getGenerativeModel({ 
+            model: MODEL_NAME,
+            generationConfig: { maxOutputTokens: 250, temperature: 0.1 }
+        });
+
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+
+        if (!text || text.trim().length === 0) throw new Error('API returned empty response');
+
+        const parsed = parseGeminiResponse(text);
+        if (parsed) {
+            console.log(`🛡️ Text Moderation result: ${parsed.verdict} — ${parsed.reason}`);
+            return parsed;
+        }
+
+        throw new Error('Failed to parse AI JSON response');
+    } catch (err) {
+        console.warn(`🛡️ Text moderation failed: ${err.message}`);
+        let userFriendlyError = err.message;
+        if (err.message.includes('429') || err.message.toLowerCase().includes('quota')) {
+            userFriendlyError = 'API Limit Reached (429 Quota Exceeded)';
+        }
+        return { verdict: 'error', reason: userFriendlyError, scores: null };
+    }
+}

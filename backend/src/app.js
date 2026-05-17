@@ -9,6 +9,8 @@ import profileRoutes from "./routes/profile.routes.js";
 import donationRoutes from "./routes/donation.routes.js";
 import leaderboardRoutes from "./routes/leaderboard.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
+import requestRoutes from "./routes/request.routes.js";
+import chatbotRoutes from "./routes/chatbot.routes.js";
 import "./config/firebase.config.js";
 
 const app = express();
@@ -36,6 +38,8 @@ app.use("/api/profile", profileRoutes);
 app.use("/api/donations", donationRoutes);
 app.use("/api/leaderboard", leaderboardRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/requests", requestRoutes);
+app.use("/api/chatbot", chatbotRoutes);
 
 /* =========================
    Health Check

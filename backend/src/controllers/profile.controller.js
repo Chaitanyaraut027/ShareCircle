@@ -24,11 +24,14 @@ export const getProfileHistory = async (req, res) => {
         // Fetch requests fulfilled by user
         const fulfilledRequests = await Request.find({ fulfilledBy: userId });
 
+        const mapDonations = (list) => list.map(i => ({...i._doc, itemType: 'donation'}));
+        const mapNeeds = (list) => list.map(i => ({...i._doc, itemType: 'need'}));
+
         return res.status(200).json({
             success: true,
             data: {
-                donated: [...donations, ...fulfilledRequests],
-                received: [...requests, ...receivedDonations]
+                donated: [...mapDonations(donations), ...mapNeeds(fulfilledRequests)],
+                received: [...mapNeeds(requests), ...mapDonations(receivedDonations)]
             }
         });
     } catch (error) {

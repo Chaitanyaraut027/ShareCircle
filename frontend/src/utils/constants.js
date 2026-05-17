@@ -4,12 +4,13 @@ const getApiUrl = () => {
     // PRODUCTION (Render)
     return 'https://sharecircle-xjq0.onrender.com/api';
     
-    // LOCAL DEVELOPMENT (Keep for reference)
+    // LOCAL DEVELOPMENT
     /*
     if (Platform.OS === 'web') {
         return 'http://localhost:5000/api';
     } else {
-        return 'http://192.168.133.117:5000/api';
+        // Change this IP to your machine's local IP network address if testing on physical device
+        return 'http://192.168.235.117:5000/api';
     }
     */
 };

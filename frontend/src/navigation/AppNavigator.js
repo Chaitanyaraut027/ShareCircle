@@ -15,6 +15,7 @@ import RequestsScreen from '../screens/RequestsScreen';
 import FindNearbyDonationsScreen from '../screens/FindNearbyDonationsScreen';
 import AdminDashboardScreen from '../screens/AdminDashboardScreen';
 import HistoryScreen from '../screens/HistoryScreen';
+import NeedRequestScreen from '../screens/NeedRequestScreen';
 
 
 const Stack = createStackNavigator();
@@ -36,6 +37,7 @@ const AppNavigator = () => {
             <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
             <Stack.Screen name="Requests" component={RequestsScreen} />
             <Stack.Screen name="NearMe" component={FindNearbyDonationsScreen} />
+            <Stack.Screen name="NeedRequest" component={NeedRequestScreen} />
             <Stack.Screen name="Welcome" component={WelcomeScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
             <Stack.Screen name="Login" component={LoginScreen} />

@@ -3,6 +3,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import LeafletMap from '../components/LeafletMap';
+import ShareCircleBot from '../components/ShareCircleBot';
 import Slider from '@react-native-community/slider';
 import { getNearbyItems, getUserHistory, getNotificationCount } from '../services/api';
 import { COLORS, API_URL } from '../utils/constants';
@@ -272,7 +273,7 @@ const DashboardScreen = ({ navigation }) => {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.sidebarItems}>
+            <ScrollView style={styles.sidebarItems} showsVerticalScrollIndicator={false}>
               <TouchableOpacity style={styles.sidebarItem} onPress={() => { setIsSidebarOpen(false); navigation.navigate('DonateForm'); }}>
                 <View style={[styles.sidebarIconBox, {backgroundColor: '#FEF3F2'}]}>
                   <MaterialCommunityIcons name="heart-plus" color="#E74C3C" size={22} />
@@ -285,6 +286,13 @@ const DashboardScreen = ({ navigation }) => {
                   <Feather name="search" color="#2F7B5E" size={22} />
                 </View>
                 <Text style={styles.sidebarLabel}>Find Donations</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.sidebarItem} onPress={() => { setIsSidebarOpen(false); navigation.navigate('NeedRequest'); }}>
+                <View style={[styles.sidebarIconBox, {backgroundColor: '#FFF0F5'}]}>
+                  <MaterialCommunityIcons name="hand-heart" color="#E91E63" size={22} />
+                </View>
+                <Text style={styles.sidebarLabel}>Need Request</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.sidebarItem} onPress={() => { setIsSidebarOpen(false); navigation.navigate('Requests'); }}>
@@ -331,7 +339,7 @@ const DashboardScreen = ({ navigation }) => {
               )}
 
               <View style={styles.sidebarDivider} />
-            </View>
+            </ScrollView>
 
             <View style={styles.sidebarFooter}>
               <Text style={styles.versionText}>ShareCircle v1.0.4</Text>
@@ -406,6 +414,20 @@ const DashboardScreen = ({ navigation }) => {
                source={require('../../assets/donation_hero_clean.png')} 
                style={styles.cardIllustrationLarge}
              />
+          </View>
+        </TouchableOpacity>
+
+        {/* Secondary Action (Need Requests) */}
+        <TouchableOpacity style={[styles.searchBar, {marginBottom: 12}]} onPress={() => navigation.navigate('NeedRequest')}>
+          <View style={[styles.searchIconContainer, {backgroundColor: '#ECFDF5'}]}>
+            <MaterialCommunityIcons name="bullhorn-outline" color="#10B981" size={24} />
+          </View>
+          <View style={styles.searchTextContainer}>
+            <Text style={styles.searchTextTitle}>Need something?</Text>
+            <Text style={[styles.searchTextSubtitle, {color: '#10B981'}]}>Post a Need Request</Text>
+          </View>
+          <View style={styles.arrowIconContainer}>
+            <Feather name="chevron-right" color="#10B981" size={16} />
           </View>
         </TouchableOpacity>
 
@@ -780,6 +802,8 @@ const DashboardScreen = ({ navigation }) => {
 
         <View style={{ height: 120 }} />
       </ScrollView>
+
+      <ShareCircleBot user={user} />
     </View>
   );
 };

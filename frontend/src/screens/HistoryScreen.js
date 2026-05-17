@@ -20,9 +20,23 @@ import { useFocusEffect } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
 
+const CATEGORY_META = {
+  All:         { icon: 'apps',              color: '#6366F1' },
+  Food:        { icon: 'fast-food-outline', color: '#F97316' },
+  Clothes:     { icon: 'shirt-outline',     color: '#3B82F6' },
+  Books:       { icon: 'book-outline',      color: '#8B5CF6' },
+  Electronics: { icon: 'tv-outline',        color: '#10B981' },
+  Medical:     { icon: 'medical-outline',   color: '#EF4444' },
+  Toys:        { icon: 'extension-puzzle-outline', color: '#EC4899' },
+  Other:       { icon: 'grid-outline',      color: '#64748B' },
+};
+const catColor = (c) => (CATEGORY_META[c] || CATEGORY_META.Other).color;
+const catIcon  = (c) => (CATEGORY_META[c] || CATEGORY_META.Other).icon;
+
 const HistoryScreen = ({ route, navigation }) => {
   const { initialFilter, initialTab } = route.params || {};
-  const [activeTab, setActiveTab] = useState(initialTab || 'donations'); // 'donations' or 'requests'
+  const [mainTab, setMainTab] = useState(initialTab || 'donations'); // 'donations' or 'needs'
+  const [subTab, setSubTab] = useState('received'); // 'received' or 'sent'
   const [statusFilter, setStatusFilter] = useState(initialFilter || 'All'); // 'All', 'Approved', 'Pending', 'Rejected'
   const [donations, setDonations] = useState([]);
   const [requests, setRequests] = useState([]);
@@ -106,12 +120,22 @@ const HistoryScreen = ({ route, navigation }) => {
   };
 
   const getFilteredData = () => {
-    const data = activeTab === 'donations' ? donations : requests;
-    if (statusFilter === 'All') return data;
+    let baseData = [];
+    if (mainTab === 'donations') {
+        baseData = subTab === 'received' 
+            ? requests.filter(i => i.itemType === 'donation')
+            : donations.filter(i => i.itemType === 'donation');
+    } else {
+        baseData = subTab === 'received' 
+            ? requests.filter(i => i.itemType === 'need')
+            : donations.filter(i => i.itemType === 'need');
+    }
+
+    if (statusFilter === 'All') return baseData;
     
-    return data.filter(item => {
+    return baseData.filter(item => {
       const s = (item.status || 'pending').toLowerCase();
-      if (statusFilter === 'Approved') return ['approved', 'available', 'completed', 'accepted'].includes(s);
+      if (statusFilter === 'Approved') return ['approved', 'available', 'completed', 'accepted', 'fulfilled'].includes(s);
       if (statusFilter === 'Pending') return ['pending', 'under_review'].includes(s);
       if (statusFilter === 'Rejected') return ['rejected', 'cancelled'].includes(s);
       return true;
@@ -120,16 +144,22 @@ const HistoryScreen = ({ route, navigation }) => {
 
   const renderItem = ({ item }) => {
     const status = getStatusDetails(item);
-    const isDonation = activeTab === 'donations';
+    const isDonation = mainTab === 'donations';
     
     return (
       <View style={styles.historyCard}>
         <View style={[styles.cardHighlight, { backgroundColor: status.color }]} />
         <View style={styles.cardInner}>
-          <Image 
-            source={{ uri: item.image || 'https://via.placeholder.com/150' }} 
-            style={styles.itemImage} 
-          />
+          {item.itemType === 'need' ? (
+              <View style={[styles.itemImage, {justifyContent:'center', alignItems:'center', backgroundColor: catColor(item.category) + '15'}]}>
+                  <Ionicons name={catIcon(item.category)} size={28} color={catColor(item.category)} />
+              </View>
+          ) : (
+              <Image 
+                source={{ uri: item.image || 'https://via.placeholder.com/150' }} 
+                style={styles.itemImage} 
+              />
+          )}
           <View style={styles.itemDetails}>
             <View style={styles.titleRow}>
               <Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text>
@@ -139,7 +169,7 @@ const HistoryScreen = ({ route, navigation }) => {
               </View>
             </View>
             
-            <Text style={styles.itemCategory}>{item.category || (isDonation ? 'Donated Item' : 'Requested Item')}</Text>
+            <Text style={styles.itemCategory}>{item.category || (item.itemType === 'donation' ? 'Donation' : 'Need Request')}</Text>
             
             <View style={styles.timeRow}>
               <Ionicons name="time-outline" size={14} color="#94A3B8" />
@@ -150,7 +180,7 @@ const HistoryScreen = ({ route, navigation }) => {
         
         <TouchableOpacity 
           style={styles.detailsBtn}
-          onPress={() => isDonation ? navigation.navigate('DonationDetail', { item }) : null}
+          onPress={() => item.itemType === 'donation' ? navigation.navigate('DonationDetail', { item }) : null}
         >
           <Text style={styles.detailsBtnText}>View Details</Text>
           <Feather name="chevron-right" size={16} color="#4B8BF5" />
@@ -175,33 +205,52 @@ const HistoryScreen = ({ route, navigation }) => {
         <View style={{ width: 44 }} /> 
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabContainer}>
+      <View style={styles.mainTabBar}>
         <TouchableOpacity 
-          style={[styles.tab, activeTab === 'donations' && styles.activeTab]}
-          onPress={() => setActiveTab('donations')}
+          style={[styles.mainTab, mainTab === 'donations' && styles.activeMainTab]}
+          onPress={() => { setMainTab('donations'); setSubTab('received'); }}
         >
           <MaterialCommunityIcons 
             name="gift-outline" 
             size={20} 
-            color={activeTab === 'donations' ? '#10B981' : '#94A3B8'} 
+            color={mainTab === 'donations' ? '#10B981' : '#94A3B8'} 
           />
-          <Text style={[styles.tabText, activeTab === 'donations' && styles.activeTabText]}>
-            My Donations
+          <Text style={[styles.mainTabText, mainTab === 'donations' && styles.activeMainTabText]}>
+            Donations
           </Text>
         </TouchableOpacity>
         
         <TouchableOpacity 
-          style={[styles.tab, activeTab === 'requests' && styles.activeTab]}
-          onPress={() => setActiveTab('requests')}
+          style={[styles.mainTab, mainTab === 'needs' && styles.activeMainTabNeeds]}
+          onPress={() => { setMainTab('needs'); setSubTab('received'); }}
         >
-          <Ionicons 
-            name="clipboard-outline" 
+          <MaterialCommunityIcons 
+            name="hand-heart" 
             size={20} 
-            color={activeTab === 'requests' ? '#10B981' : '#94A3B8'} 
+            color={mainTab === 'needs' ? '#10B981' : '#94A3B8'} 
           />
-          <Text style={[styles.tabText, activeTab === 'requests' && styles.activeTabText]}>
-            My Requests
+          <Text style={[styles.mainTabText, mainTab === 'needs' && styles.activeMainTabTextNeeds]}>
+            Need Requests
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.subTabBar}>
+        <TouchableOpacity 
+          style={[styles.subTab, subTab === 'received' && styles.activeSubTab]}
+          onPress={() => setSubTab('received')}
+        >
+          <Text style={[styles.subTabText, subTab === 'received' && (mainTab === 'needs' ? {color: '#10B981'} : styles.activeSubTabText)]}>
+            Received
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.subTab, subTab === 'sent' && styles.activeSubTab]}
+          onPress={() => setSubTab('sent')}
+        >
+          <Text style={[styles.subTabText, subTab === 'sent' && (mainTab === 'needs' ? {color: '#10B981'} : styles.activeSubTabText)]}>
+            Sent
           </Text>
         </TouchableOpacity>
       </View>
@@ -224,12 +273,11 @@ const HistoryScreen = ({ route, navigation }) => {
           </View>
       </View>
 
-      {/* Sub Filter for Status */}
       <View style={styles.filterContainer}>
         {['All', 'Approved', 'Pending', 'Rejected'].map(filter => (
           <TouchableOpacity 
             key={filter} 
-            style={[styles.filterChip, statusFilter === filter && styles.activeFilterChip]}
+            style={[styles.filterChip, statusFilter === filter && (mainTab === 'needs' ? {backgroundColor: '#10B981', borderColor: '#10B981'} : styles.activeFilterChip)]}
             onPress={() => setStatusFilter(filter)}
           >
             <Text style={[styles.filterChipText, statusFilter === filter && styles.activeFilterChipText]}>
@@ -256,23 +304,23 @@ const HistoryScreen = ({ route, navigation }) => {
             <View style={styles.emptyState}>
               <View style={styles.emptyIconContainer}>
                 <Ionicons 
-                    name={activeTab === 'donations' ? 'gift-outline' : 'clipboard-outline'} 
+                    name={mainTab === 'donations' ? 'gift-outline' : 'hand-heart-outline'} 
                     size={48} 
                     color="#CBD5E1" 
                 />
               </View>
               <Text style={styles.emptyTitle}>Currently Empty</Text>
               <Text style={styles.emptySub}>
-                {activeTab === 'donations' 
-                    ? "You haven't donated any items yet." 
-                    : "You haven't made any requests yet."}
+                {mainTab === 'donations' 
+                    ? "You haven't made any donation activity in this category." 
+                    : "You haven't made any need requests here."}
               </Text>
               <TouchableOpacity 
-                style={styles.actionBtn}
-                onPress={() => navigation.navigate(activeTab === 'donations' ? 'DonateForm' : 'NearMe')}
+                style={[styles.actionBtn, mainTab === 'needs' && {backgroundColor: '#10B981', shadowColor: '#10B981'}]}
+                onPress={() => navigation.navigate(mainTab === 'donations' ? 'DonateForm' : 'NeedRequest')}
               >
                 <Text style={styles.actionBtnText}>
-                    {activeTab === 'donations' ? 'Donate Now' : 'Find Items'}
+                    {mainTab === 'donations' ? 'Donate Now' : 'Post a Need'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -310,15 +358,13 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#1E293B',
   },
-  tabContainer: {
+  mainTabBar: {
     flexDirection: 'row',
     paddingHorizontal: 20,
     paddingVertical: 15,
     backgroundColor: '#FFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
   },
-  tab: {
+  mainTab: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -326,16 +372,53 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 12,
   },
-  activeTab: {
+  activeMainTab: {
     backgroundColor: '#F0FDFA',
   },
-  tabText: {
+  activeMainTabNeeds: {
+    backgroundColor: '#F0FDF4',
+  },
+  mainTabText: {
     marginLeft: 8,
     fontSize: 14,
     fontWeight: '700',
     color: '#94A3B8',
   },
-  activeTabText: {
+  activeMainTabText: {
+    color: '#10B981',
+  },
+  activeMainTabTextNeeds: {
+    color: '#10B981',
+  },
+  subTabBar: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: 5,
+  },
+  subTab: {
+    flex: 1,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  activeSubTab: {
+    backgroundColor: '#FFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  subTabText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  activeSubTabText: {
     color: '#10B981',
   },
   statsSummary: {

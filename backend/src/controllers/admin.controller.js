@@ -1,5 +1,6 @@
 import User from '../models/user.model.js';
 import Donation from '../models/donation.model.js';
+import Request from '../models/request.model.js';
 import { sendPushNotification, sendBulkNotifications } from '../utils/notifications.js';
 
 // @desc    Get all users with basic stats
@@ -47,9 +48,20 @@ export const getAllDonations = async (req, res) => {
         const donations = await Donation.find({})
             .populate('donor', 'fullName email mobileNumber profilePic')
             .populate('requests.requester', 'fullName email mobileNumber')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .lean();
             
-        res.status(200).json({ success: true, count: donations.length, data: donations });
+        const requests = await Request.find({})
+            .populate('requester', 'fullName email mobileNumber profilePic')
+            .sort({ createdAt: -1 })
+            .lean();
+
+        const formattedDonations = donations.map(d => ({ ...d, itemType: 'donation' }));
+        const formattedRequests = requests.map(r => ({ ...r, donor: r.requester, itemType: 'need', image: null }));
+        
+        const combined = [...formattedDonations, ...formattedRequests].sort((a,b) => b.createdAt - a.createdAt);
+
+        res.status(200).json({ success: true, count: combined.length, data: combined });
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: 'Server Error' });
@@ -62,34 +74,45 @@ export const deleteDonation = async (req, res) => {
     try {
         const donationId = req.params.id;
         const { reason } = req.body || {};
-        const donation = await Donation.findById(donationId);
         
-        if (!donation) {
-            return res.status(404).json({ success: false, message: 'Donation not found' });
+        let item = await Donation.findById(donationId);
+        let isNeed = false;
+        if (!item) {
+            item = await Request.findById(donationId);
+            if (item) isNeed = true;
+        }
+        
+        if (!item) {
+            return res.status(404).json({ success: false, message: 'Item not found' });
         }
 
-        const title = donation.title;
-        const donorId = donation.donor;
+        const title = item.title;
+        const donorId = isNeed ? item.requester : item.donor;
 
-        await Donation.findByIdAndDelete(donationId);
+        if (isNeed) {
+            await Request.findByIdAndDelete(donationId);
+        } else {
+            await Donation.findByIdAndDelete(donationId);
+        }
         
         // Notify the user about deletion
         try {
             const donor = await User.findById(donorId).select('pushToken');
             if (donor && donor.pushToken) {
                 const deletionReason = reason ? `Reason: ${reason}` : 'It was removed by an administrator.';
+                const typeName = isNeed ? 'Need Request' : 'Donation';
                 await sendPushNotification(
                     donor.pushToken,
-                    '🗑️ Donation Deleted',
-                    `Your donation "${title}" has been deleted. ${deletionReason}`,
-                    { type: 'donation_deleted' }
+                    `🗑️ ${typeName} Deleted`,
+                    `Your ${typeName.toLowerCase()} "${title}" has been deleted. ${deletionReason}`,
+                    { type: 'item_deleted' }
                 );
             }
         } catch (e) {
             console.error('Error sending deletion notification:', e);
         }
 
-        res.status(200).json({ success: true, message: 'Donation deleted successfully' });
+        res.status(200).json({ success: true, message: 'Item deleted successfully' });
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: 'Server Error' });
@@ -134,9 +157,20 @@ export const getReviewQueue = async (req, res) => {
     try {
         const donations = await Donation.find({ status: 'under_review' })
             .populate('donor', 'fullName email mobileNumber profilePic')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .lean();
 
-        res.status(200).json({ success: true, count: donations.length, data: donations });
+        const requests = await Request.find({ status: 'under_review' })
+            .populate('requester', 'fullName email mobileNumber profilePic')
+            .sort({ createdAt: -1 })
+            .lean();
+
+        const formattedDonations = donations.map(d => ({ ...d, itemType: 'donation' }));
+        const formattedRequests = requests.map(r => ({ ...r, donor: r.requester, itemType: 'need', image: null }));
+
+        const combined = [...formattedDonations, ...formattedRequests].sort((a,b) => b.createdAt - a.createdAt);
+
+        res.status(200).json({ success: true, count: combined.length, data: combined });
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: 'Server Error' });
@@ -150,67 +184,94 @@ export const approveDonation = async (req, res) => {
         const donationId = req.params.id;
         const { adminNote } = req.body;
 
-        const donation = await Donation.findById(donationId);
-        if (!donation) {
-            return res.status(404).json({ success: false, message: 'Donation not found' });
+        let item = await Donation.findById(donationId);
+        let isNeed = false;
+        
+        if (!item) {
+            item = await Request.findById(donationId);
+            if (item) isNeed = true;
         }
 
-        if (donation.status !== 'under_review') {
-            return res.status(400).json({ success: false, message: 'This donation is not in the review queue' });
+        if (!item) {
+            return res.status(404).json({ success: false, message: 'Item not found' });
         }
 
-        // Update status to approved
-        donation.status = 'approved';
-        donation.moderationResult.status = 'approved';
-        donation.moderationResult.adminNote = adminNote || 'Approved by admin after manual review';
-        donation.moderationResult.reviewedBy = req.user._id;
-        donation.moderationResult.reviewedAt = new Date();
-        await donation.save();
+        if (item.status !== 'under_review') {
+            return res.status(400).json({ success: false, message: 'This item is not in the review queue' });
+        }
 
-        // Notify the donor — their donation is approved!
+        // Update status to approved (pending for needs is the "approved" state)
+        item.status = isNeed ? 'pending' : 'approved';
+        item.moderationResult.status = 'approved';
+        item.moderationResult.adminNote = adminNote || 'Approved by admin after manual review';
+        item.moderationResult.reviewedBy = req.user._id;
+        item.moderationResult.reviewedAt = new Date();
+        await item.save();
+
+        // Notify the user — their item is approved!
+        const ownerId = isNeed ? item.requester : item.donor;
+        const typeName = isNeed ? 'Need Request' : 'Donation';
+        
         try {
-            const donor = await User.findById(donation.donor).select('pushToken fullName');
-            if (donor && donor.pushToken) {
+            const owner = await User.findById(ownerId).select('pushToken fullName');
+            if (owner && owner.pushToken) {
                 await sendPushNotification(
-                    donor.pushToken,
-                    '✅ Donation Approved!',
-                    `Great news! Your donation "${donation.title}" has been reviewed and approved. It's now visible to everyone on ShareCircle!`,
-                    { donationId: String(donation._id), type: 'moderation_approved' }
+                    owner.pushToken,
+                    `✅ ${typeName} Approved!`,
+                    `Great news! Your ${typeName.toLowerCase()} "${item.title}" has been reviewed and approved. It's now visible to everyone on ShareCircle!`,
+                    { itemId: String(item._id), type: 'moderation_approved' }
                 );
             }
         } catch (e) {
-            console.error('❌ Error notifying donor about approval:', e);
+            console.error('❌ Error notifying user about approval:', e);
         }
 
-        // Broadcast to all users — new donation available!
+        // Broadcast to all users — new item available!
         try {
-            const allUsersWithToken = await User.find({
-                _id: { $ne: donation.donor },
+            let query = {
+                _id: { $ne: ownerId },
                 pushToken: { $exists: true, $ne: null, $ne: '' }
-            }).select('pushToken');
+            };
+
+            if (item.location && item.location.coordinates && item.location.coordinates.length === 2) {
+                const lng = item.location.coordinates[0];
+                const lat = item.location.coordinates[1];
+                if (lng !== 0 && lat !== 0) {
+                    query.location = {
+                        $geoWithin: {
+                            $centerSphere: [[lng, lat], 100 / 6378.1] // 100 km radius
+                        }
+                    };
+                }
+            }
+
+            const allUsersWithToken = await User.find(query).select('pushToken');
 
             const tokens = allUsersWithToken
                 .map(u => u.pushToken)
                 .filter(t => t && typeof t === 'string' && t.length > 10);
 
-            console.log(`📱 Admin Approval: Found ${tokens.length} users to broadcast to.`);
-
             if (tokens.length > 0) {
+                const broadcastTitle = isNeed ? '📢 New Need Request!' : '🎁 New Donation Posted!';
+                const broadcastBody = isNeed 
+                    ? `Someone nearby needs "${item.title}". Tap to see if you can help!`
+                    : `"${item.title}" was just posted nearby. Tap to check it out!`;
+                
                 await sendBulkNotifications(
                     tokens,
-                    '🎁 New Donation Posted!',
-                    `"${donation.title}" was just posted nearby. Tap to check it out!`,
-                    { donationId: String(donation._id), type: 'new_donation' }
+                    broadcastTitle,
+                    broadcastBody,
+                    { itemId: String(item._id), type: isNeed ? 'new_request' : 'new_donation' }
                 );
             }
         } catch (e) {
-            console.error('❌ Error broadcasting approved donation:', e);
+            console.error('❌ Error broadcasting approved item:', e);
         }
 
         res.status(200).json({
             success: true,
-            message: `Donation "${donation.title}" approved and is now live!`,
-            data: donation
+            message: `${typeName} "${item.title}" approved and is now live!`,
+            data: item
         });
     } catch (error) {
         console.error(error);
@@ -225,46 +286,56 @@ export const rejectDonation = async (req, res) => {
         const donationId = req.params.id;
         const { adminNote } = req.body;
 
-        const donation = await Donation.findById(donationId);
-        if (!donation) {
-            return res.status(404).json({ success: false, message: 'Donation not found' });
+        let item = await Donation.findById(donationId);
+        let isNeed = false;
+        
+        if (!item) {
+            item = await Request.findById(donationId);
+            if (item) isNeed = true;
         }
 
-        if (donation.status !== 'under_review') {
-            return res.status(400).json({ success: false, message: 'This donation is not in the review queue' });
+        if (!item) {
+            return res.status(404).json({ success: false, message: 'Item not found' });
+        }
+
+        if (item.status !== 'under_review') {
+            return res.status(400).json({ success: false, message: 'This item is not in the review queue' });
         }
 
         // Update status to rejected
-        donation.status = 'rejected';
-        donation.moderationResult.status = 'rejected';
-        donation.moderationResult.adminNote = adminNote || 'Rejected by admin after manual review';
-        donation.moderationResult.reviewedBy = req.user._id;
-        donation.moderationResult.reviewedAt = new Date();
-        await donation.save();
+        item.status = 'rejected';
+        item.moderationResult.status = 'rejected';
+        item.moderationResult.adminNote = adminNote || 'Rejected by admin after manual review';
+        item.moderationResult.reviewedBy = req.user._id;
+        item.moderationResult.reviewedAt = new Date();
+        await item.save();
 
-        // Notify the donor — their donation was rejected
+        const ownerId = isNeed ? item.requester : item.donor;
+        const typeName = isNeed ? 'Need Request' : 'Donation';
+
+        // Notify the user — their item was rejected
         try {
-            const donor = await User.findById(donation.donor).select('pushToken fullName');
-            if (donor && donor.pushToken) {
+            const owner = await User.findById(ownerId).select('pushToken fullName');
+            if (owner && owner.pushToken) {
                 const reason = adminNote
                     ? `Reason: ${adminNote}`
                     : 'It did not meet our community guidelines.';
 
                 await sendPushNotification(
-                    donor.pushToken,
-                    '❌ Donation Not Approved',
-                    `We're sorry, but your donation "${donation.title}" was not approved after review. ${reason} You can try posting again with a different image.`,
-                    { donationId: String(donation._id), type: 'moderation_rejected' }
+                    owner.pushToken,
+                    `❌ ${typeName} Not Approved`,
+                    `We're sorry, but your ${typeName.toLowerCase()} "${item.title}" was not approved after review. ${reason}`,
+                    { itemId: String(item._id), type: 'moderation_rejected' }
                 );
             }
         } catch (e) {
-            console.error('❌ Error notifying donor about rejection:', e);
+            console.error('❌ Error notifying user about rejection:', e);
         }
 
         res.status(200).json({
             success: true,
-            message: `Donation "${donation.title}" has been rejected.`,
-            data: donation
+            message: `${typeName} "${item.title}" has been rejected.`,
+            data: item
         });
     } catch (error) {
         console.error(error);
