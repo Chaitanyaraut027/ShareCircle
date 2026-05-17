@@ -59,12 +59,12 @@ const ShareCircleBot = ({ user }) => {
 
   if (expanded) {
     return (
-      <Modal visible={expanded} transparent animationType="slide" onRequestClose={toggleExpand}>
-        <View style={styles.expandedContainer}>
-          <KeyboardAvoidingView 
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
-            style={styles.chatWindow}
-          >
+      <Modal visible={expanded} transparent={false} animationType="slide" onRequestClose={toggleExpand}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+          style={styles.expandedContainer}
+        >
+          <View style={styles.chatWindow}>
             <View style={styles.header}>
               <View style={styles.headerLeft}>
                 <View style={styles.botAvatarSmall}>
@@ -124,8 +124,8 @@ const ShareCircleBot = ({ user }) => {
                 <Ionicons name="send" size={18} color="#FFF" />
               </TouchableOpacity>
             </View>
-          </KeyboardAvoidingView>
-        </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     );
   }
@@ -169,18 +169,11 @@ const styles = StyleSheet.create({
   
   // Expanded Chat Window
   expandedContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 1000,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
-    justifyContent: 'flex-end',
+    flex: 1,
+    backgroundColor: '#F8FAFC',
   },
   chatWindow: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
   },
   header: {
     flexDirection: 'row',
