@@ -31,9 +31,13 @@ const DEV_ORIGINS = [
 
 // Production web origins — set ALLOWED_WEB_ORIGINS env var on Render as a
 // comma-separated list, e.g. "https://sharecircle.vercel.app,https://sharecircle.netlify.app"
-const PROD_ORIGINS = process.env.ALLOWED_WEB_ORIGINS
-  ? process.env.ALLOWED_WEB_ORIGINS.split(",").map((o) => o.trim())
-  : [];
+// By default, always include the deployed Netlify URL to avoid manual env configuration.
+const PROD_ORIGINS = [
+  "https://sharecircleweb.netlify.app",
+  ...(process.env.ALLOWED_WEB_ORIGINS
+    ? process.env.ALLOWED_WEB_ORIGINS.split(",").map((o) => o.trim())
+    : [])
+];
 
 const ALL_ALLOWED_ORIGINS = [...DEV_ORIGINS, ...PROD_ORIGINS];
 
